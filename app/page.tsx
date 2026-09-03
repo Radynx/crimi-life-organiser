@@ -89,6 +89,13 @@ type Settings = {
   mealMinHours: number;
   mealValue: number;
 };
+type Appearance = {
+  theme: 'system' | 'light' | 'dark';
+  font: keyof typeof FONT_STACKS;
+  brandColor: string;
+  accentColor: string;
+  highlightColor: string;
+};
 type ToolRegistration = {
   name: string;
   title: string;
@@ -216,6 +223,23 @@ const initialSettings: Settings = {
   mealValue: 7,
 };
 
+const FONT_STACKS = {
+  geist: 'var(--font-geist-sans), Arial, Helvetica, sans-serif',
+  system:
+    'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif',
+  rounded: 'Trebuchet MS, Arial, sans-serif',
+  editorial: 'Georgia, Times New Roman, serif',
+  mono: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+} as const;
+
+const initialAppearance: Appearance = {
+  theme: 'system',
+  font: 'geist',
+  brandColor: '#142f2a',
+  accentColor: '#d7df23',
+  highlightColor: '#ff6b4a',
+};
+
 const euro = new Intl.NumberFormat('it-IT', {
   style: 'currency',
   currency: 'EUR',
@@ -250,6 +274,26 @@ function daysUntil(date: string) {
   );
 }
 
+function hexToRgb(hex: string) {
+  const value = hex.replace('#', '');
+  const normalized =
+    value.length === 3
+      ? value
+          .split('')
+          .map((char) => `${char}${char}`)
+          .join('')
+      : value;
+  const number = Number.parseInt(normalized, 16);
+  if (!Number.isFinite(number)) return { r: 20, g: 47, b: 42 };
+  return { r: (number >> 16) & 255, g: (number >> 8) & 255, b: number & 255 };
+}
+
+function rgbToHex(r: number, g: number, b: number) {
+  const clamp = (value: number) =>
+    Math.max(0, Math.min(255, Math.round(Number(value) || 0)));
+  return `#${[clamp(r), clamp(g), clamp(b)].map((value) => value.toString(16).padStart(2, '0')).join('')}`;
+}
+
 async function compressReceipt(file: File) {
   if (!file.type.startsWith('image/')) return '';
   const source = await new Promise<string>((resolve, reject) => {
@@ -279,7 +323,9 @@ export default function Home() {
   const [workEntries, setWorkEntries] = useState<WorkEntry[]>(initialWork);
   const [deadlines, setDeadlines] = useState<Deadline[]>(initialDeadlines);
   const [settings, setSettings] = useState<Settings>(initialSettings);
+  const [appearance, setAppearance] = useState<Appearance>(initialAppearance);
   const [expenseOpen, setExpenseOpen] = useState(false);
+  const [appearanceOpen, setAppearanceOpen] = useState(false);
   const [deadlineVehicle, setDeadlineVehicle] = useState<
     'Macchina' | 'Moto' | null
   >(null);
@@ -311,11 +357,14 @@ export default function Home() {
           workEntries: WorkEntry[];
           deadlines: Deadline[];
           settings: Settings;
+          appearance: Appearance;
         }>;
         if (data.expenses) setExpenses(data.expenses);
         if (data.workEntries) setWorkEntries(data.workEntries);
         if (data.deadlines) setDeadlines(data.deadlines);
         if (data.settings) setSettings(data.settings);
+        if (data.appearance)
+          setAppearance({ ...initialAppearance, ...data.appearance });
       }
     } catch {
       setNotice('Non è stato possibile leggere i dati salvati.');
@@ -328,12 +377,39 @@ export default function Home() {
     try {
       localStorage.setItem(
         STORAGE_KEY,
-        JSON.stringify({ expenses, workEntries, deadlines, settings }),
+        JSON.stringify({
+          expenses,
+          workEntries,
+          deadlines,
+          settings,
+          appearance,
+        }),
       );
     } catch {
       setNotice('Spazio locale esaurito: rimuovi alcune foto degli scontrini.');
     }
-  }, [deadlines, expenses, hydrated, settings, workEntries]);
+  }, [appearance, deadlines, expenses, hydrated, settings, workEntries]);
+
+  useEffect(() => {
+    const root = document.documentElement;
+    const media = window.matchMedia('(prefers-color-scheme: dark)');
+    const applyAppearance = () => {
+      const dark =
+        appearance.theme === 'dark' ||
+        (appearance.theme === 'system' && media.matches);
+      root.classList.toggle('dark', dark);
+      root.style.setProperty('--font-app', FONT_STACKS[appearance.font]);
+      root.style.setProperty('--ink', appearance.brandColor);
+      root.style.setProperty('--primary', appearance.brandColor);
+      root.style.setProperty('--lime', appearance.accentColor);
+      root.style.setProperty('--ring', appearance.accentColor);
+      root.style.setProperty('--coral', appearance.highlightColor);
+    };
+    applyAppearance();
+    if (appearance.theme !== 'system') return undefined;
+    media.addEventListener('change', applyAppearance);
+    return () => media.removeEventListener('change', applyAppearance);
+  }, [appearance]);
 
   useEffect(() => {
     if (!('serviceWorker' in navigator)) return;
@@ -695,6 +771,15 @@ export default function Home() {
             >
               <Bell />
               <span className="absolute right-2 top-2 size-2 rounded-full bg-coral ring-2 ring-ink" />
+            </Button>
+            <Button
+              aria-label="Apri impostazioni"
+              onClick={() => setAppearanceOpen(true)}
+              variant="ghost"
+              className="h-10 rounded-2xl px-3 text-white hover:bg-white/10 hover:text-white"
+            >
+              <Settings2 />
+              <span className="hidden sm:inline">Impostazioni</span>
             </Button>
             <Button
               onClick={() => setExpenseOpen(true)}
@@ -1354,7 +1439,7 @@ export default function Home() {
           <form className="grid gap-4 sm:grid-cols-2" onSubmit={submitExpense}>
             <Field label="Nome negozio">
               <Input
-                  required
+                required
                 placeholder="Es. Supermercato"
                 value={expenseDraft.store}
                 onChange={(e) =>
@@ -1540,6 +1625,120 @@ export default function Home() {
         </DialogContent>
       </Dialog>
 
+      <Dialog open={appearanceOpen} onOpenChange={setAppearanceOpen}>
+        <DialogContent className="max-h-[92vh] overflow-y-auto rounded-[1.75rem] p-5 sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 font-heading text-2xl font-black">
+              <Settings2 className="size-6 text-teal" /> Personalizza app
+            </DialogTitle>
+            <DialogDescription>
+              Le preferenze vengono salvate su questo dispositivo e applicate
+              subito a tutta l’interfaccia.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-6">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Aspetto">
+                <NativeSelect
+                  className="w-full"
+                  value={appearance.theme}
+                  onChange={(event) =>
+                    setAppearance({
+                      ...appearance,
+                      theme: event.target.value as Appearance['theme'],
+                    })
+                  }
+                >
+                  <NativeSelectOption value="system">
+                    Come il dispositivo
+                  </NativeSelectOption>
+                  <NativeSelectOption value="light">
+                    Modalità chiara
+                  </NativeSelectOption>
+                  <NativeSelectOption value="dark">
+                    Modalità scura
+                  </NativeSelectOption>
+                </NativeSelect>
+              </Field>
+              <Field label="Font dell’app">
+                <NativeSelect
+                  className="w-full"
+                  value={appearance.font}
+                  onChange={(event) =>
+                    setAppearance({
+                      ...appearance,
+                      font: event.target.value as Appearance['font'],
+                    })
+                  }
+                >
+                  <NativeSelectOption value="geist">
+                    Geist · moderno
+                  </NativeSelectOption>
+                  <NativeSelectOption value="system">
+                    System · neutro
+                  </NativeSelectOption>
+                  <NativeSelectOption value="rounded">
+                    Trebuchet · morbido
+                  </NativeSelectOption>
+                  <NativeSelectOption value="editorial">
+                    Georgia · editoriale
+                  </NativeSelectOption>
+                  <NativeSelectOption value="mono">
+                    Monospace · tecnico
+                  </NativeSelectOption>
+                </NativeSelect>
+              </Field>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <p className="text-sm font-bold">Colori personalizzati</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Usa il picker oppure imposta direttamente i valori RGB
+                  (0–255).
+                </p>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-3">
+                <ColorControl
+                  label="Brand"
+                  value={appearance.brandColor}
+                  onChange={(value) =>
+                    setAppearance({ ...appearance, brandColor: value })
+                  }
+                />
+                <ColorControl
+                  label="Accento"
+                  value={appearance.accentColor}
+                  onChange={(value) =>
+                    setAppearance({ ...appearance, accentColor: value })
+                  }
+                />
+                <ColorControl
+                  label="Evidenza"
+                  value={appearance.highlightColor}
+                  onChange={(value) =>
+                    setAppearance({ ...appearance, highlightColor: value })
+                  }
+                />
+              </div>
+            </div>
+            <div className="flex items-center gap-3 rounded-2xl bg-muted p-4 text-sm">
+              <span className="grid size-9 place-items-center rounded-xl bg-teal text-white">
+                <Check className="size-4" />
+              </span>
+              <span>
+                <strong>Anteprima attiva.</strong>{' '}
+                <span className="text-muted-foreground">
+                  Ogni modifica è visibile appena la selezioni.
+                </span>
+              </span>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button onClick={() => setAppearanceOpen(false)}>Fatto</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <nav
         aria-label="Navigazione principale"
         className="fixed inset-x-3 bottom-3 z-50 grid grid-cols-4 rounded-[1.4rem] bg-ink p-2 text-white shadow-2xl lg:hidden"
@@ -1682,6 +1881,66 @@ function SummaryCard({
         </span>
       </CardContent>
     </Card>
+  );
+}
+
+function ColorControl({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const rgb = hexToRgb(value);
+  const updateChannel = (channel: 'r' | 'g' | 'b', channelValue: string) => {
+    onChange(
+      rgbToHex(
+        channel === 'r' ? Number(channelValue) : rgb.r,
+        channel === 'g' ? Number(channelValue) : rgb.g,
+        channel === 'b' ? Number(channelValue) : rgb.b,
+      ),
+    );
+  };
+  return (
+    <div className="rounded-2xl border border-border bg-card p-3">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-sm font-bold">{label}</span>
+        <input
+          aria-label={`Scegli colore ${label}`}
+          className="size-9 cursor-pointer rounded-xl border-0 bg-transparent p-0"
+          type="color"
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+        />
+      </div>
+      <code className="mt-2 block text-xs font-semibold uppercase text-muted-foreground">
+        {value}
+      </code>
+      <div className="mt-3 grid grid-cols-3 gap-1.5">
+        {(['r', 'g', 'b'] as const).map((channel) => (
+          <label
+            key={channel}
+            className="flex items-center gap-1 rounded-lg bg-muted px-1.5"
+          >
+            <span className="text-[0.65rem] font-black uppercase text-muted-foreground">
+              {channel}
+            </span>
+            <Input
+              aria-label={`${label} ${channel.toUpperCase()}`}
+              className="h-7 border-0 bg-transparent px-0 text-center text-xs shadow-none"
+              inputMode="numeric"
+              max="255"
+              min="0"
+              type="number"
+              value={rgb[channel]}
+              onChange={(event) => updateChannel(channel, event.target.value)}
+            />
+          </label>
+        ))}
+      </div>
+    </div>
   );
 }
 function PageHeading({

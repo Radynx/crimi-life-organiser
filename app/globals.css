@@ -27,11 +27,11 @@
   --color-teal: var(--teal);
   --color-coral: var(--coral);
   --color-lime: var(--lime);
-  --font-sans: var(--font-geist-sans);
-  --font-heading: var(--font-geist-sans);
+  --font-sans: var(--font-app, var(--font-geist-sans));
+  --font-heading: var(--font-app, var(--font-geist-sans));
   --font-mono: var(--font-geist-mono);
-  --radius-sm: calc(var(--radius) * .65);
-  --radius-md: calc(var(--radius) * .82);
+  --radius-sm: calc(var(--radius) * 0.65);
+  --radius-md: calc(var(--radius) * 0.82);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) * 1.45);
   --radius-2xl: calc(var(--radius) * 1.9);
@@ -60,7 +60,7 @@
   --teal: #18a999;
   --coral: #ff6b4a;
   --lime: #d7df23;
-  --radius: .85rem;
+  --radius: 0.85rem;
 }
 
 .dark {
@@ -79,8 +79,8 @@
   --accent: #21463e;
   --accent-foreground: #ffffff;
   --destructive: #ff7662;
-  --border: rgba(255,255,255,.12);
-  --input: rgba(255,255,255,.16);
+  --border: rgba(255, 255, 255, 0.12);
+  --input: rgba(255, 255, 255, 0.16);
   --ring: #d7df23;
   --ink: #142f2a;
   --teal: #18a999;
@@ -89,10 +89,23 @@
 }
 
 @layer base {
-  * { @apply border-border outline-ring/50; }
-  html { @apply font-sans; }
-  body { @apply bg-background text-foreground; min-width: 320px; }
-  button, [role='button'] { touch-action: manipulation; }
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    @apply font-sans;
+  }
+  body {
+    @apply bg-background text-foreground;
+    min-width: 320px;
+  }
+  button,
+  [role='button'] {
+    touch-action: manipulation;
+  }
 }
 
-::selection { background: #d7df23; color: #142f2a; }
+::selection {
+  background: #d7df23;
+  color: #142f2a;
+}
