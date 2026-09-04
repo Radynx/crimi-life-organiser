@@ -151,6 +151,11 @@ type Company = {
 type Appearance = {
   theme: 'system' | 'light' | 'dark';
   font: keyof typeof FONT_STACKS;
+  textScale: 'small' | 'medium' | 'large';
+  density: 'compact' | 'comfortable' | 'spacious';
+  radius: 'soft' | 'rounded' | 'sharp';
+  highContrast: boolean;
+  reduceMotion: boolean;
   brandColor: string;
   accentColor: string;
   highlightColor: string;
@@ -436,6 +441,11 @@ const FONT_STACKS = {
 const initialAppearance: Appearance = {
   theme: 'system',
   font: 'geist',
+  textScale: 'medium',
+  density: 'comfortable',
+  radius: 'rounded',
+  highContrast: false,
+  reduceMotion: false,
   brandColor: '#0f3d5e',
   accentColor: '#21a179',
   highlightColor: '#f97360',
@@ -941,7 +951,43 @@ export default function Home() {
         appearance.theme === 'dark' ||
         (appearance.theme === 'system' && media.matches);
       root.classList.toggle('dark', dark);
+      root.classList.toggle('high-contrast', appearance.highContrast);
+      root.classList.toggle('reduce-motion', appearance.reduceMotion);
+      root.dataset.density = appearance.density;
+      root.dataset.radiusStyle = appearance.radius;
       root.style.setProperty('--font-app', FONT_STACKS[appearance.font]);
+      root.style.setProperty(
+        '--font-scale',
+        appearance.textScale === 'small'
+          ? '0.9375'
+          : appearance.textScale === 'large'
+            ? '1.125'
+            : '1',
+      );
+      root.style.setProperty(
+        '--density-scale',
+        appearance.density === 'compact'
+          ? '0.88'
+          : appearance.density === 'spacious'
+            ? '1.12'
+            : '1',
+      );
+      root.style.setProperty(
+        '--app-line-height',
+        appearance.density === 'compact'
+          ? '1.3'
+          : appearance.density === 'spacious'
+            ? '1.65'
+            : '1.45',
+      );
+      root.style.setProperty(
+        '--radius',
+        appearance.radius === 'soft'
+          ? '1.15rem'
+          : appearance.radius === 'sharp'
+            ? '0.35rem'
+            : '0.85rem',
+      );
       root.style.setProperty('--ink', appearance.brandColor);
       root.style.setProperty('--primary', appearance.brandColor);
       root.style.setProperty('--lime', appearance.accentColor);
@@ -1662,11 +1708,8 @@ export default function Home() {
     const saved = savedThemes.find((theme) => theme.id === id);
     if (!saved) return;
     setAppearance({
-      theme: saved.theme,
-      font: saved.font,
-      brandColor: saved.brandColor,
-      accentColor: saved.accentColor,
-      highlightColor: saved.highlightColor,
+      ...initialAppearance,
+      ...saved,
     });
     setNotice(`Tema “${saved.name}” applicato.`);
   }
@@ -2000,11 +2043,15 @@ export default function Home() {
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart
                       data={[
-                        { name: 'Entrate', value: wage, fill: '#142f2a' },
+                        {
+                          name: 'Entrate teoriche',
+                          value: wage,
+                          fill: appearance.brandColor,
+                        },
                         {
                           name: 'Uscite',
                           value: monthExpenseTotal,
-                          fill: '#ff6b4a',
+                          fill: appearance.highlightColor,
                         },
                       ]}
                       barSize={46}
@@ -2012,7 +2059,7 @@ export default function Home() {
                     >
                       <CartesianGrid
                         vertical={false}
-                        stroke="#e9ebe7"
+                        stroke="var(--border)"
                         strokeDasharray="3 5"
                       />
                       <XAxis
@@ -2020,21 +2067,23 @@ export default function Home() {
                         axisLine={false}
                         tickLine={false}
                         tick={{
-                          fill: '#65736f',
+                          fill: 'var(--muted-foreground)',
                           fontSize: 12,
                           fontWeight: 600,
                         }}
                       />
                       <YAxis hide />
                       <Tooltip
-                        cursor={{ fill: '#f2f4ef' }}
+                        cursor={{ fill: 'var(--muted)' }}
                         formatter={(value) => [
                           euro.format(Number(value)),
                           'Totale',
                         ]}
                         contentStyle={{
                           borderRadius: 14,
-                          border: 'none',
+                          border: '1px solid var(--border)',
+                          backgroundColor: 'var(--popover)',
+                          color: 'var(--popover-foreground)',
                           boxShadow: '0 12px 30px rgba(20,47,42,.12)',
                         }}
                       />
@@ -3662,7 +3711,7 @@ export default function Home() {
       </Dialog>
 
       <Dialog open={appearanceOpen} onOpenChange={setAppearanceOpen}>
-        <DialogContent className="h-[100dvh] max-h-[100dvh] w-screen max-w-none overflow-y-auto rounded-none border-0 bg-background p-4 sm:max-w-none sm:p-8">
+        <DialogContent className="inset-0 left-0 top-0 h-[100dvh] max-h-[100dvh] w-screen max-w-none translate-x-0 translate-y-0 overflow-y-auto rounded-none border-0 bg-background p-4 sm:max-w-none sm:p-8">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 font-heading text-2xl font-black">
               <Settings2 className="size-6 text-teal" /> Impostazioni
@@ -3759,6 +3808,88 @@ export default function Home() {
                   </NativeSelectOption>
                 </NativeSelect>
               </Field>
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <Field label="Dimensione testo">
+                <NativeSelect
+                  className="w-full"
+                  value={appearance.textScale}
+                  onChange={(event) =>
+                    setAppearance({
+                      ...appearance,
+                      textScale: event.target.value as Appearance['textScale'],
+                    })
+                  }
+                >
+                  <NativeSelectOption value="small">Compatta</NativeSelectOption>
+                  <NativeSelectOption value="medium">Standard</NativeSelectOption>
+                  <NativeSelectOption value="large">Grande</NativeSelectOption>
+                </NativeSelect>
+              </Field>
+              <Field label="Densità interfaccia">
+                <NativeSelect
+                  className="w-full"
+                  value={appearance.density}
+                  onChange={(event) =>
+                    setAppearance({
+                      ...appearance,
+                      density: event.target.value as Appearance['density'],
+                    })
+                  }
+                >
+                  <NativeSelectOption value="compact">Compatta</NativeSelectOption>
+                  <NativeSelectOption value="comfortable">
+                    Standard
+                  </NativeSelectOption>
+                  <NativeSelectOption value="spacious">Aria</NativeSelectOption>
+                </NativeSelect>
+              </Field>
+              <Field label="Stile angoli">
+                <NativeSelect
+                  className="w-full"
+                  value={appearance.radius}
+                  onChange={(event) =>
+                    setAppearance({
+                      ...appearance,
+                      radius: event.target.value as Appearance['radius'],
+                    })
+                  }
+                >
+                  <NativeSelectOption value="soft">Molto morbidi</NativeSelectOption>
+                  <NativeSelectOption value="rounded">Arrotondati</NativeSelectOption>
+                  <NativeSelectOption value="sharp">Netti</NativeSelectOption>
+                </NativeSelect>
+              </Field>
+              <div className="flex items-center gap-3 rounded-2xl border border-border bg-card p-3 sm:col-span-2 lg:col-span-1">
+                <span className="min-w-0 flex-1">
+                  <strong className="block text-sm">Contrasto elevato</strong>
+                  <span className="mt-1 block text-xs text-muted-foreground">
+                    Aumenta la leggibilità di testi e bordi.
+                  </span>
+                </span>
+                <Switch
+                  aria-label="Attiva contrasto elevato"
+                  checked={appearance.highContrast}
+                  onCheckedChange={(checked) =>
+                    setAppearance({ ...appearance, highContrast: checked })
+                  }
+                />
+              </div>
+              <div className="flex items-center gap-3 rounded-2xl border border-border bg-card p-3 sm:col-span-2 lg:col-span-2">
+                <span className="min-w-0 flex-1">
+                  <strong className="block text-sm">Riduci animazioni</strong>
+                  <span className="mt-1 block text-xs text-muted-foreground">
+                    Riduce transizioni e movimenti per un’esperienza più calma.
+                  </span>
+                </span>
+                <Switch
+                  aria-label="Riduci animazioni"
+                  checked={appearance.reduceMotion}
+                  onCheckedChange={(checked) =>
+                    setAppearance({ ...appearance, reduceMotion: checked })
+                  }
+                />
+              </div>
             </div>
             <div className="space-y-3 rounded-2xl bg-muted/60 p-4">
               <div>

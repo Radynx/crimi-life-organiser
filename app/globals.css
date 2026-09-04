@@ -38,6 +38,8 @@
 }
 
 :root {
+  --font-scale: 1;
+  --app-line-height: 1.45;
   --background: #f1f6f8;
   --foreground: #0f3d5e;
   --card: #ffffff;
@@ -94,15 +96,42 @@
   }
   html {
     @apply font-sans;
+    font-size: calc(16px * var(--font-scale));
   }
   body {
     @apply bg-background text-foreground;
     min-width: 320px;
+    line-height: var(--app-line-height);
   }
   button,
   [role='button'] {
     touch-action: manipulation;
   }
+}
+
+.high-contrast {
+  --muted-foreground: #36515f;
+  --border: #73919e;
+  --input: #5f7f8d;
+}
+
+.dark.high-contrast {
+  --muted-foreground: #e1f1f5;
+  --border: rgba(255, 255, 255, 0.5);
+  --input: rgba(255, 255, 255, 0.42);
+}
+
+.high-contrast .text-muted-foreground {
+  color: var(--muted-foreground);
+}
+
+.reduce-motion *,
+.reduce-motion *::before,
+.reduce-motion *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  scroll-behavior: auto !important;
+  transition-duration: 0.01ms !important;
 }
 
 ::selection {
