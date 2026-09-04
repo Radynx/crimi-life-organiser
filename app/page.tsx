@@ -165,11 +165,19 @@ type SavedTheme = Appearance & {
   id: string;
   name: string;
 };
+type BankAccount = {
+  id: string;
+  name: string;
+  balance: number;
+  iban: string;
+  notes: string;
+};
 type AccountData = {
   expenses: Expense[];
   workEntries: WorkEntry[];
   deadlines: Deadline[];
   vehicles: VehicleRecord[];
+  bankAccounts: BankAccount[];
   settings: Settings;
   profile: Profile;
   appearance: Appearance;
@@ -439,6 +447,7 @@ const initialProfile: Profile = {
   homeAddress: '',
   additionalAddresses: [],
 };
+const initialBankAccounts: BankAccount[] = [];
 
 const euro = new Intl.NumberFormat('it-IT', {
   style: 'currency',
@@ -543,6 +552,17 @@ function parseAccountData(raw: unknown): Partial<AccountData> {
     data.deadlines = value.deadlines as Deadline[];
   if (Array.isArray(value.vehicles))
     data.vehicles = value.vehicles as VehicleRecord[];
+  if (Array.isArray(value.bankAccounts))
+    data.bankAccounts = value.bankAccounts.map((account) => {
+      const item = account as Partial<BankAccount>;
+      return {
+        id: String(item.id ?? uid('bank')),
+        name: String(item.name ?? ''),
+        balance: Number(item.balance) || 0,
+        iban: String(item.iban ?? ''),
+        notes: String(item.notes ?? ''),
+      };
+    });
   if (value.settings && typeof value.settings === 'object')
     data.settings = value.settings as Settings;
   if (value.profile && typeof value.profile === 'object') {
@@ -602,6 +622,8 @@ export default function Home() {
   const [workEntries, setWorkEntries] = useState<WorkEntry[]>(initialWork);
   const [deadlines, setDeadlines] = useState<Deadline[]>(initialDeadlines);
   const [vehicles, setVehicles] = useState<VehicleRecord[]>(initialVehicles);
+  const [bankAccounts, setBankAccounts] =
+    useState<BankAccount[]>(initialBankAccounts);
   const [settings, setSettings] = useState<Settings>(initialSettings);
   const [profile, setProfile] = useState<Profile>(initialProfile);
   const [appearance, setAppearance] = useState<Appearance>(initialAppearance);
@@ -610,6 +632,17 @@ export default function Home() {
   const [selectedSavedThemeId, setSelectedSavedThemeId] = useState('');
   const [expenseOpen, setExpenseOpen] = useState(false);
   const [appearanceOpen, setAppearanceOpen] = useState(false);
+  const [balanceOpen, setBalanceOpen] = useState(false);
+  const [balanceDraft, setBalanceDraft] = useState('');
+  const [bankOpen, setBankOpen] = useState(false);
+  const [editingBankId, setEditingBankId] = useState<string | null>(null);
+  const [bankDraft, setBankDraft] = useState({
+    name: '',
+    balance: '',
+    iban: '',
+    notes: '',
+  });
+  const [notificationHelpOpen, setNotificationHelpOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState<
     'account' | 'personalizza' | 'temi' | 'sezioni'
   >('personalizza');
@@ -690,6 +723,7 @@ export default function Home() {
         setWorkEntries(initialWork);
         setDeadlines(initialDeadlines);
         setVehicles(initialVehicles);
+        setBankAccounts(initialBankAccounts);
         setSettings(initialSettings);
         setProfile(initialProfile);
         setAppearance(initialAppearance);
@@ -721,6 +755,7 @@ export default function Home() {
               : [],
           })),
         );
+      if (data.bankAccounts) setBankAccounts(data.bankAccounts);
       if (data.settings) setSettings(mergeSettings(data.settings));
       if (data.profile)
         setProfile({
@@ -788,6 +823,7 @@ export default function Home() {
           workEntries: firstAccountData?.workEntries ?? initialWork,
           deadlines: firstAccountData?.deadlines ?? initialDeadlines,
           vehicles: firstAccountData?.vehicles ?? initialVehicles,
+          bankAccounts: firstAccountData?.bankAccounts ?? initialBankAccounts,
           settings: mergeSettings(firstAccountData?.settings),
           profile: { ...initialProfile, ...firstAccountData?.profile },
           appearance: { ...initialAppearance, ...firstAccountData?.appearance },
@@ -830,6 +866,7 @@ export default function Home() {
       workEntries,
       deadlines,
       vehicles,
+      bankAccounts,
       settings,
       profile,
       appearance,
@@ -857,6 +894,7 @@ export default function Home() {
   }, [
     appearance,
     authUser,
+    bankAccounts,
     deadlines,
     expenses,
     hydrated,
@@ -917,6 +955,22 @@ export default function Home() {
         setNotice('Modalità offline non disponibile in questo browser.'),
       );
   }, [deadlines]);
+
+  useEffect(() => {
+    if (
+      !authUser ||
+      !('Notification' in window) ||
+      Notification.permission !== 'denied'
+    )
+      return;
+    const reminderAt = Number(
+      localStorage.getItem('crimi-notification-reminder') ?? 0,
+    );
+    if (reminderAt && Date.now() >= reminderAt) {
+      localStorage.removeItem('crimi-notification-reminder');
+      setNotificationHelpOpen(true);
+    }
+  }, [authUser]);
 
   useEffect(() => {
     if (!firebaseAuth) return undefined;
@@ -1135,6 +1189,10 @@ export default function Home() {
       setNotice('Le notifiche non sono supportate da questo browser.');
       return;
     }
+    if (Notification.permission === 'denied') {
+      setNotificationHelpOpen(true);
+      return;
+    }
     const permission = await Notification.requestPermission();
     if (permission === 'granted') {
       const registration = await navigator.serviceWorker.ready;
@@ -1144,7 +1202,85 @@ export default function Home() {
         tag: 'crimi-welcome',
       });
       setNotice('Notifiche attivate.');
-    } else setNotice('Permesso notifiche non concesso.');
+    } else setNotificationHelpOpen(true);
+  }
+
+  function openBalanceEditor() {
+    setBalanceDraft(String(settings.openingBalance));
+    setBalanceOpen(true);
+  }
+
+  function saveBalance(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const value = Number(balanceDraft.replace(',', '.'));
+    if (!Number.isFinite(value)) {
+      setNotice('Inserisci un saldo valido.');
+      return;
+    }
+    setSettings((current) => ({ ...current, openingBalance: value }));
+    setBalanceOpen(false);
+    setNotice('Saldo disponibile aggiornato.');
+  }
+
+  function openNewBank() {
+    setEditingBankId(null);
+    setBankDraft({ name: '', balance: '', iban: '', notes: '' });
+    setBankOpen(true);
+  }
+
+  function openEditBank(account: BankAccount) {
+    setEditingBankId(account.id);
+    setBankDraft({
+      name: account.name,
+      balance: String(account.balance),
+      iban: account.iban,
+      notes: account.notes,
+    });
+    setBankOpen(true);
+  }
+
+  function saveBank(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const name = bankDraft.name.trim();
+    const balance = Number(bankDraft.balance.replace(',', '.'));
+    if (!name || !Number.isFinite(balance)) {
+      setNotice('Inserisci nome banca e saldo validi.');
+      return;
+    }
+    const account: BankAccount = {
+      id: editingBankId ?? uid('bank'),
+      name,
+      balance,
+      iban: bankDraft.iban.trim(),
+      notes: bankDraft.notes.trim(),
+    };
+    setBankAccounts((current) =>
+      editingBankId
+        ? current.map((item) => (item.id === editingBankId ? account : item))
+        : [account, ...current],
+    );
+    setBankOpen(false);
+    setEditingBankId(null);
+    setNotice(editingBankId ? 'Conto bancario aggiornato.' : 'Conto bancario aggiunto.');
+  }
+
+  function deleteBank(account: BankAccount) {
+    if (!window.confirm(`Rimuovere il conto “${account.name}”?`)) return;
+    setBankAccounts((current) => current.filter((item) => item.id !== account.id));
+    setNotice(`Conto “${account.name}” rimosso.`);
+  }
+
+  function postponeNotifications() {
+    try {
+      localStorage.setItem(
+        'crimi-notification-reminder',
+        String(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      );
+    } catch {
+      /* La notifica viene comunque rimandata per questa sessione. */
+    }
+    setNotificationHelpOpen(false);
+    setNotice('Ti ricorderemo di attivare le notifiche tra 7 giorni.');
   }
 
   async function onReceipt(file?: File) {
@@ -1644,7 +1780,8 @@ export default function Home() {
                       className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm font-semibold transition hover:bg-muted"
                       onClick={() => {
                         setAccountMenuOpen(false);
-                        setAccountOpen(true);
+                        setSettingsTab('account');
+                        setAppearanceOpen(true);
                       }}
                       role="menuitem"
                       type="button"
@@ -1767,6 +1904,14 @@ export default function Home() {
                     value={euro.format(monthExpenseTotal)}
                   />
                 </div>
+                <Button
+                  className="mt-4 w-fit rounded-xl border border-white/20 bg-white/10 text-white hover:bg-white/20 hover:text-white"
+                  onClick={openBalanceEditor}
+                  type="button"
+                  variant="ghost"
+                >
+                  <Pencil className="size-4" /> Modifica saldo
+                </Button>
               </CardContent>
             </Card>
 
@@ -1934,6 +2079,91 @@ export default function Home() {
                 {expenses.slice(0, 3).map((item) => (
                   <ExpenseRow key={item.id} expense={item} />
                 ))}
+              </CardContent>
+            </Card>
+            <Card className="rounded-[1.75rem] border-0 bg-card shadow-sm ring-1 ring-ink/7">
+              <CardHeader className="flex-row items-center justify-between px-5 pt-5">
+                <div>
+                  <CardTitle className="font-heading text-xl font-extrabold tracking-tight">
+                    I miei conti
+                  </CardTitle>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Banche e portafogli dove tieni i tuoi soldi.
+                  </p>
+                </div>
+                <Button
+                  className="rounded-xl text-teal hover:bg-teal/10 hover:text-teal"
+                  onClick={openNewBank}
+                  size="sm"
+                  type="button"
+                  variant="ghost"
+                >
+                  <Plus /> Aggiungi
+                </Button>
+              </CardHeader>
+              <CardContent className="space-y-2 px-3 pb-4">
+                {bankAccounts.length ? (
+                  <>
+                    {bankAccounts.map((account) => (
+                      <div
+                        key={account.id}
+                        className="flex items-center gap-3 rounded-xl bg-muted/60 px-3 py-2.5"
+                      >
+                        <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-teal/12 text-teal">
+                          <WalletCards className="size-4" />
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <strong className="block truncate text-sm">
+                            {account.name}
+                          </strong>
+                          <span className="block truncate text-xs text-muted-foreground">
+                            {account.iban || 'Conto personale'}
+                          </span>
+                        </span>
+                        <span className="text-sm font-extrabold">
+                          {euro.format(account.balance)}
+                        </span>
+                        <Button
+                          aria-label={`Modifica ${account.name}`}
+                          className="shrink-0"
+                          onClick={() => openEditBank(account)}
+                          size="icon-sm"
+                          type="button"
+                          variant="ghost"
+                        >
+                          <Pencil />
+                        </Button>
+                        <Button
+                          aria-label={`Elimina ${account.name}`}
+                          className="shrink-0 text-muted-foreground hover:text-destructive"
+                          onClick={() => deleteBank(account)}
+                          size="icon-sm"
+                          type="button"
+                          variant="ghost"
+                        >
+                          <Trash2 />
+                        </Button>
+                      </div>
+                    ))}
+                    <div className="flex items-center justify-between border-t border-border pt-3 text-sm">
+                      <span className="font-semibold text-muted-foreground">
+                        Totale conti
+                      </span>
+                      <strong>
+                        {euro.format(
+                          bankAccounts.reduce(
+                            (sum, account) => sum + account.balance,
+                            0,
+                          ),
+                        )}
+                      </strong>
+                    </div>
+                  </>
+                ) : (
+                  <p className="rounded-xl bg-muted px-3 py-3 text-sm text-muted-foreground">
+                    Nessun conto aggiunto. Puoi inserire banche, carte o contanti.
+                  </p>
+                )}
               </CardContent>
             </Card>
             <div className="grid grid-cols-2 gap-3">
@@ -2308,7 +2538,10 @@ export default function Home() {
                         }
                       />
                     </Field>
-                    <Button className="h-11 rounded-2xl bg-teal font-bold text-white hover:bg-teal/90 sm:col-span-2">
+                    <Button
+                      className="h-11 rounded-2xl bg-teal font-bold text-white hover:bg-teal/90 sm:col-span-2"
+                      type="submit"
+                    >
                       <Plus /> Registra ore
                     </Button>
                   </form>
@@ -2531,6 +2764,156 @@ export default function Home() {
           </div>
         </TabsContent>
       </Tabs>
+
+      <Dialog open={balanceOpen} onOpenChange={setBalanceOpen}>
+        <DialogContent className="rounded-[1.75rem] p-5 sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="font-heading text-2xl font-black">
+              Modifica saldo disponibile
+            </DialogTitle>
+            <DialogDescription>
+              Imposta il saldo di partenza del tuo spazio Crimi. Le entrate e le
+              uscite del mese vengono calcolate automaticamente a partire da qui.
+            </DialogDescription>
+          </DialogHeader>
+          <form className="space-y-4" onSubmit={saveBalance}>
+            <Field label="Saldo disponibile (€)">
+              <Input
+                inputMode="decimal"
+                step="0.01"
+                type="number"
+                value={balanceDraft}
+                onChange={(event) => setBalanceDraft(event.target.value)}
+              />
+            </Field>
+            <DialogFooter>
+              <Button
+                onClick={() => setBalanceOpen(false)}
+                type="button"
+                variant="ghost"
+              >
+                Annulla
+              </Button>
+              <Button className="bg-teal font-bold text-white hover:bg-teal/90" type="submit">
+                <Check /> Salva saldo
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={bankOpen}
+        onOpenChange={(open) => {
+          setBankOpen(open);
+          if (!open) setEditingBankId(null);
+        }}
+      >
+        <DialogContent className="max-h-[92vh] overflow-y-auto rounded-[1.75rem] p-5 sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 font-heading text-2xl font-black">
+              <WalletCards className="size-6 text-teal" />
+              {editingBankId ? 'Modifica conto' : 'Aggiungi conto'}
+            </DialogTitle>
+            <DialogDescription>
+              Salva banche, carte o contanti e tieni sotto controllo il saldo di
+              ogni conto.
+            </DialogDescription>
+          </DialogHeader>
+          <form className="grid gap-4" onSubmit={saveBank}>
+            <Field label="Nome banca o conto">
+              <Input
+                required
+                placeholder="Es. Intesa Sanpaolo"
+                value={bankDraft.name}
+                onChange={(event) =>
+                  setBankDraft({ ...bankDraft, name: event.target.value })
+                }
+              />
+            </Field>
+            <Field label="Saldo (€)">
+              <Input
+                required
+                inputMode="decimal"
+                step="0.01"
+                type="number"
+                value={bankDraft.balance}
+                onChange={(event) =>
+                  setBankDraft({ ...bankDraft, balance: event.target.value })
+                }
+              />
+            </Field>
+            <Field label="IBAN o riferimento (facoltativo)">
+              <Input
+                autoComplete="off"
+                placeholder="IT00 0000 0000 0000 0000 0000 000"
+                value={bankDraft.iban}
+                onChange={(event) =>
+                  setBankDraft({ ...bankDraft, iban: event.target.value })
+                }
+              />
+            </Field>
+            <Field label="Note (facoltative)">
+              <Textarea
+                placeholder="Es. conto per le spese fisse"
+                value={bankDraft.notes}
+                onChange={(event) =>
+                  setBankDraft({ ...bankDraft, notes: event.target.value })
+                }
+              />
+            </Field>
+            <DialogFooter>
+              <Button onClick={() => setBankOpen(false)} type="button" variant="ghost">
+                Annulla
+              </Button>
+              <Button className="bg-teal font-bold text-white hover:bg-teal/90" type="submit">
+                <Check /> Salva conto
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={notificationHelpOpen} onOpenChange={setNotificationHelpOpen}>
+        <DialogContent className="rounded-[1.75rem] p-5 sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 font-heading text-2xl font-black">
+              <Bell className="size-6 text-teal" /> Notifiche da attivare
+            </DialogTitle>
+            <DialogDescription>
+              Il browser ha bloccato le notifiche per questo sito. Puoi abilitarle
+              in qualsiasi momento dalle impostazioni del browser.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 rounded-2xl bg-muted/70 p-4 text-sm leading-relaxed">
+            <p>
+              Apri le impostazioni del browser per questo sito, imposta
+              <strong> Notifiche → Consenti</strong>, poi torna qui e premi
+              “Riprova ora”. Su iPhone puoi anche verificare le notifiche del
+              browser in Impostazioni di iOS.
+            </p>
+            <p className="text-muted-foreground">
+              Se preferisci, puoi rimandare il promemoria: te lo riproporremo tra
+              una settimana.
+            </p>
+          </div>
+          <DialogFooter className="flex-col gap-2 sm:flex-row">
+            <Button onClick={postponeNotifications} type="button" variant="ghost">
+              Ricordamelo tra 7 giorni
+            </Button>
+            <Button
+              className="bg-teal font-bold text-white hover:bg-teal/90"
+              onClick={() => {
+                setNotificationHelpOpen(false);
+                window.setTimeout(() => void requestNotifications(), 0);
+              }}
+              type="button"
+            >
+              Riprova ora
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={expenseOpen} onOpenChange={setExpenseOpen}>
         <DialogContent className="max-h-[92vh] overflow-y-auto rounded-[1.75rem] p-5 sm:max-w-xl">
@@ -3318,7 +3701,7 @@ export default function Home() {
       </Dialog>
 
       <Dialog open={appearanceOpen} onOpenChange={setAppearanceOpen}>
-        <DialogContent className="max-h-[92vh] overflow-y-auto rounded-[1.75rem] p-5 sm:max-w-xl">
+        <DialogContent className="h-[100dvh] max-h-[100dvh] w-screen max-w-none overflow-y-auto rounded-none border-0 bg-background p-4 sm:p-8">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 font-heading text-2xl font-black">
               <Settings2 className="size-6 text-teal" /> Impostazioni
