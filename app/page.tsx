@@ -1066,6 +1066,14 @@ export default function Home() {
   }, [section, settings.enabledSections]);
 
   const month = currentMonthKey();
+  const monthName = useMemo(
+    () =>
+      new Intl.DateTimeFormat('it-IT', {
+        month: 'long',
+        year: 'numeric',
+      }).format(new Date(`${month}-01T00:00:00`)),
+    [month],
+  );
   const monthExpenses = useMemo(
     () => expenses.filter((item) => item.date.startsWith(month)),
     [expenses, month],
@@ -1952,15 +1960,11 @@ export default function Home() {
                     <p className="mt-3 font-heading text-4xl font-black tracking-[-0.06em] sm:text-6xl">
                       {euro.format(availableBalance)}
                     </p>
-                    <p className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1.5 text-sm font-semibold text-lime">
-                      <ArrowUpRight className="size-4" />{' '}
-                      {euro.format(wage)} entrate teoriche questo mese
-                    </p>
                   </div>
                   <WalletCards className="size-7 text-white/60" />
                 </div>
                 <div className="mt-10 grid grid-cols-2 gap-3 sm:max-w-md">
-                  <Metric label="Entrate teoriche" value={euro.format(wage)} />
+                  <Metric label="Conti bancari" value={euro.format(bankTotal)} />
                   <Metric
                     label="Uscite"
                     value={euro.format(monthExpenseTotal)}
@@ -2532,7 +2536,7 @@ export default function Home() {
                 />
                 <SummaryCard
                   icon={Euro}
-                  label="Guadagno"
+                  label="Guadagno teorico"
                   value={euro.format(wage)}
                   color="bg-ink"
                 />
@@ -2543,6 +2547,68 @@ export default function Home() {
                   color="bg-coral"
                 />
               </div>
+              <Card className="rounded-[1.75rem] border-0 shadow-sm ring-1 ring-ink/7">
+                <CardHeader className="px-5 pt-5">
+                  <CardTitle className="font-heading text-xl font-extrabold">
+                    Riepilogo mensile
+                  </CardTitle>
+                  <p className="text-sm capitalize text-muted-foreground">
+                    Guadagno teorico e buoni pasto · {monthName}
+                  </p>
+                </CardHeader>
+                <CardContent className="h-[230px] px-3 pb-4">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart
+                      data={[
+                        {
+                          name: 'Guadagno',
+                          value: wage,
+                          fill: appearance.brandColor,
+                        },
+                        {
+                          name: 'Buoni pasto',
+                          value: benefits,
+                          fill: appearance.accentColor,
+                        },
+                      ]}
+                      barSize={56}
+                      margin={{ left: 4, right: 8, top: 8, bottom: 0 }}
+                    >
+                      <CartesianGrid
+                        vertical={false}
+                        stroke="var(--border)"
+                        strokeDasharray="3 5"
+                      />
+                      <XAxis
+                        dataKey="name"
+                        axisLine={false}
+                        tickLine={false}
+                        tick={{
+                          fill: 'var(--muted-foreground)',
+                          fontSize: 12,
+                          fontWeight: 600,
+                        }}
+                      />
+                      <YAxis hide />
+                      <Tooltip
+                        cursor={{ fill: 'var(--muted)' }}
+                        formatter={(value) => [
+                          euro.format(Number(value)),
+                          'Totale',
+                        ]}
+                        contentStyle={{
+                          borderRadius: 14,
+                          border: '1px solid var(--border)',
+                          backgroundColor: 'var(--popover)',
+                          color: 'var(--popover-foreground)',
+                          boxShadow: '0 12px 30px rgba(20,47,42,.12)',
+                        }}
+                      />
+                      <Bar dataKey="value" radius={[14, 14, 4, 4]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </CardContent>
+              </Card>
               <Card className="rounded-[1.75rem] border-0 shadow-sm ring-1 ring-ink/7">
                 <CardHeader className="px-5 pt-5">
                   <CardTitle className="font-heading text-xl font-extrabold">
@@ -3727,20 +3793,29 @@ export default function Home() {
               setSettingsTab(value as typeof settingsTab)
             }
           >
-            <TabsList className="grid h-auto w-full grid-cols-2 rounded-2xl bg-muted p-1 sm:grid-cols-4">
-              <TabsTrigger value="account" className="rounded-xl py-2">
+            <TabsList className="grid h-auto w-full min-w-0 grid-cols-2 overflow-hidden rounded-2xl bg-muted p-1 sm:grid-cols-4">
+              <TabsTrigger
+                value="account"
+                className="min-w-0 overflow-hidden rounded-xl py-2 text-xs sm:text-sm"
+              >
                 Account
               </TabsTrigger>
               <TabsTrigger
                 value="personalizza"
-                className="rounded-xl py-2"
+                className="min-w-0 overflow-hidden rounded-xl py-2 text-xs sm:text-sm"
               >
                 Personalizza
               </TabsTrigger>
-              <TabsTrigger value="temi" className="rounded-xl py-2">
+              <TabsTrigger
+                value="temi"
+                className="min-w-0 overflow-hidden rounded-xl py-2 text-xs sm:text-sm"
+              >
                 Temi
               </TabsTrigger>
-              <TabsTrigger value="sezioni" className="rounded-xl py-2">
+              <TabsTrigger
+                value="sezioni"
+                className="min-w-0 overflow-hidden rounded-xl py-2 text-xs sm:text-sm"
+              >
                 Sezioni
               </TabsTrigger>
             </TabsList>
