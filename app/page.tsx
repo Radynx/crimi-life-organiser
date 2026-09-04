@@ -761,14 +761,18 @@ export default function Home() {
               : [],
           })),
         );
-      if (data.bankAccounts) setBankAccounts(data.bankAccounts);
-      else if (data.settings?.openingBalance !== undefined)
+      if (data.bankAccounts?.length) setBankAccounts(data.bankAccounts);
+      else if (
+        data.settings?.openingBalance !== undefined &&
+        Number(data.settings.openingBalance) !== 0
+      )
         setBankAccounts([
           {
             ...initialBankAccounts[0],
             balance: Number(data.settings.openingBalance) || 0,
           },
         ]);
+      else if (data.bankAccounts) setBankAccounts(data.bankAccounts);
       if (data.settings) setSettings(mergeSettings(data.settings));
       if (data.profile)
         setProfile({
@@ -837,15 +841,17 @@ export default function Home() {
           deadlines: firstAccountData?.deadlines ?? initialDeadlines,
           vehicles: firstAccountData?.vehicles ?? initialVehicles,
           bankAccounts:
-            firstAccountData?.bankAccounts ??
-            (firstAccountData?.settings?.openingBalance !== undefined
+            (firstAccountData?.bankAccounts?.length
+              ? firstAccountData.bankAccounts
+              : firstAccountData?.settings?.openingBalance !== undefined &&
+                  Number(firstAccountData.settings.openingBalance) !== 0
               ? [
                   {
                     ...initialBankAccounts[0],
                     balance: Number(firstAccountData.settings.openingBalance) || 0,
                   },
                 ]
-              : initialBankAccounts),
+              : firstAccountData?.bankAccounts ?? initialBankAccounts),
           settings: mergeSettings(firstAccountData?.settings),
           profile: { ...initialProfile, ...firstAccountData?.profile },
           appearance: { ...initialAppearance, ...firstAccountData?.appearance },
@@ -1263,6 +1269,8 @@ export default function Home() {
       iban: bankDraft.iban.trim(),
       notes: bankDraft.notes.trim(),
     };
+    if (!editingBankId && bankAccounts.length === 0)
+      setSettings((current) => ({ ...current, openingBalance: 0 }));
     setBankAccounts((current) =>
       editingBankId
         ? current.map((item) => (item.id === editingBankId ? account : item))
@@ -1276,6 +1284,8 @@ export default function Home() {
   function deleteBank(account: BankAccount) {
     if (!window.confirm(`Rimuovere il conto “${account.name}”?`)) return;
     setBankAccounts((current) => current.filter((item) => item.id !== account.id));
+    if (bankAccounts.length <= 1)
+      setSettings((current) => ({ ...current, openingBalance: 0 }));
     setNotice(`Conto “${account.name}” rimosso.`);
   }
 
