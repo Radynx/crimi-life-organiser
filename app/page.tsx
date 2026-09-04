@@ -1380,6 +1380,9 @@ export default function Home() {
     setVehicles((current) =>
       current.filter((item) => item.id !== vehicle.id),
     );
+    setDeadlines((current) =>
+      current.filter((item) => item.vehicleId !== vehicle.id),
+    );
     setNotice(`Mezzo “${vehicle.name}” eliminato.`);
   }
 
