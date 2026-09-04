@@ -16,14 +16,27 @@ import {
   Fuel,
   ImagePlus,
   LayoutDashboard,
+  LockKeyhole,
+  LogIn,
+  LogOut,
+  Mail,
   Plus,
   ReceiptText,
   Settings2,
+  ShieldCheck,
   Sparkles,
   Trash2,
   Utensils,
   WalletCards,
 } from 'lucide-react';
+import {
+  createUserWithEmailAndPassword,
+  onAuthStateChanged,
+  sendPasswordResetEmail,
+  signInWithEmailAndPassword,
+  signOut,
+  type User,
+} from 'firebase/auth';
 import {
   Bar,
   BarChart,
@@ -56,6 +69,7 @@ import {
 } from '@/components/ui/native-select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
+import { firebaseAuth, firebaseConfigured } from '@/lib/firebase';
 
 type Section = 'dashboard' | 'spese' | 'mezzi' | 'lavoro';
 type Vehicle = 'Macchina' | 'Moto' | 'Altro';
@@ -294,6 +308,31 @@ function rgbToHex(r: number, g: number, b: number) {
   return `#${[clamp(r), clamp(g), clamp(b)].map((value) => value.toString(16).padStart(2, '0')).join('')}`;
 }
 
+function authErrorMessage(error: unknown) {
+  const code =
+    typeof error === 'object' && error !== null && 'code' in error
+      ? String((error as { code?: unknown }).code)
+      : '';
+  const messages: Record<string, string> = {
+    'auth/email-already-in-use':
+      'Questa email è già registrata. Prova ad accedere.',
+    'auth/invalid-credential': 'Email o password non corrette.',
+    'auth/invalid-email': 'Inserisci un indirizzo email valido.',
+    'auth/operation-not-allowed':
+      'Il metodo Email/Password non è ancora attivo nel progetto Firebase.',
+    'auth/too-many-requests':
+      'Troppi tentativi ravvicinati. Riprova tra qualche minuto.',
+    'auth/user-disabled': 'Questo account è stato disabilitato.',
+    'auth/user-not-found': 'Non esiste ancora un account con questa email.',
+    'auth/weak-password': 'La password deve contenere almeno 6 caratteri.',
+    'auth/network-request-failed':
+      'Connessione non disponibile. Controlla la rete e riprova.',
+  };
+  return (
+    messages[code] ?? 'Non è stato possibile completare l’operazione. Riprova.'
+  );
+}
+
 async function compressReceipt(file: File) {
   if (!file.type.startsWith('image/')) return '';
   const source = await new Promise<string>((resolve, reject) => {
@@ -326,6 +365,15 @@ export default function Home() {
   const [appearance, setAppearance] = useState<Appearance>(initialAppearance);
   const [expenseOpen, setExpenseOpen] = useState(false);
   const [appearanceOpen, setAppearanceOpen] = useState(false);
+  const [authOpen, setAuthOpen] = useState(false);
+  const [authMode, setAuthMode] = useState<'login' | 'signup' | 'reset'>(
+    'login',
+  );
+  const [authUser, setAuthUser] = useState<User | null>(null);
+  const [authEmail, setAuthEmail] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
+  const [authBusy, setAuthBusy] = useState(false);
+  const [authError, setAuthError] = useState('');
   const [deadlineVehicle, setDeadlineVehicle] = useState<
     'Macchina' | 'Moto' | null
   >(null);
@@ -440,6 +488,17 @@ export default function Home() {
         setNotice('Modalità offline non disponibile in questo browser.'),
       );
   }, [deadlines]);
+
+  useEffect(() => {
+    if (!firebaseAuth) return undefined;
+    return onAuthStateChanged(firebaseAuth, (user) => {
+      setAuthUser(user);
+      if (user) {
+        setAuthOpen(false);
+        setAuthPassword('');
+      }
+    });
+  }, []);
 
   const month = currentMonthKey();
   const monthExpenses = useMemo(
@@ -709,6 +768,48 @@ export default function Home() {
     );
   }
 
+  async function submitAuth(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setAuthError('');
+    if (!firebaseAuth || !firebaseConfigured) {
+      setAuthError(
+        'Configura Firebase con le variabili VITE_FIREBASE_* per attivare l’accesso.',
+      );
+      return;
+    }
+    const email = authEmail.trim();
+    if (!email) {
+      setAuthError('Inserisci il tuo indirizzo email.');
+      return;
+    }
+    if (authMode !== 'reset' && authPassword.length < 6) {
+      setAuthError('La password deve contenere almeno 6 caratteri.');
+      return;
+    }
+    setAuthBusy(true);
+    try {
+      if (authMode === 'reset') {
+        await sendPasswordResetEmail(firebaseAuth, email);
+        setAuthMode('login');
+        setAuthPassword('');
+        setNotice('Email di reset inviata. Controlla la tua casella di posta.');
+      } else if (authMode === 'signup') {
+        await createUserWithEmailAndPassword(firebaseAuth, email, authPassword);
+        setNotice('Account creato: accesso effettuato.');
+        setAuthOpen(false);
+      } else {
+        await signInWithEmailAndPassword(firebaseAuth, email, authPassword);
+        setNotice('Accesso effettuato.');
+        setAuthOpen(false);
+      }
+      setAuthPassword('');
+    } catch (error) {
+      setAuthError(authErrorMessage(error));
+    } finally {
+      setAuthBusy(false);
+    }
+  }
+
   const vehicleSpend = (vehicle: 'Macchina' | 'Moto') =>
     expenses
       .filter((item) => item.vehicle === vehicle)
@@ -723,6 +824,18 @@ export default function Home() {
     { value: 'mezzi', label: 'Mezzi', icon: CarFront },
     { value: 'lavoro', label: 'Lavoro', icon: Clock3 },
   ];
+  const authTitle =
+    authMode === 'signup'
+      ? 'Crea il tuo account'
+      : authMode === 'reset'
+        ? 'Reimposta password'
+        : 'Accedi a Crimi';
+  const authSubmitLabel =
+    authMode === 'signup'
+      ? 'Crea account'
+      : authMode === 'reset'
+        ? 'Invia email di reset'
+        : 'Accedi';
 
   return (
     <main className="min-h-screen bg-background pb-24 text-foreground lg:pb-10">
@@ -772,6 +885,39 @@ export default function Home() {
               <Bell />
               <span className="absolute right-2 top-2 size-2 rounded-full bg-coral ring-2 ring-ink" />
             </Button>
+            {authUser ? (
+              <>
+                <span className="hidden max-w-44 items-center gap-2 truncate rounded-2xl bg-white/10 px-3 py-2 text-xs font-semibold text-white/80 md:flex">
+                  <ShieldCheck className="size-4 shrink-0 text-lime" />
+                  <span className="truncate">{authUser.email}</span>
+                </span>
+                <Button
+                  aria-label="Esci dall’account"
+                  onClick={() => {
+                    if (firebaseAuth) void signOut(firebaseAuth);
+                  }}
+                  variant="ghost"
+                  className="h-10 rounded-2xl px-3 text-white hover:bg-white/10 hover:text-white"
+                >
+                  <LogOut />
+                  <span className="hidden sm:inline">Esci</span>
+                </Button>
+              </>
+            ) : (
+              <Button
+                aria-label="Accedi o crea un account"
+                onClick={() => {
+                  setAuthMode('login');
+                  setAuthError('');
+                  setAuthOpen(true);
+                }}
+                variant="ghost"
+                className="h-10 rounded-2xl px-3 text-white hover:bg-white/10 hover:text-white"
+              >
+                <LogIn />
+                <span className="hidden sm:inline">Accedi</span>
+              </Button>
+            )}
             <Button
               aria-label="Apri impostazioni"
               onClick={() => setAppearanceOpen(true)}
@@ -1622,6 +1768,154 @@ export default function Home() {
           <DialogFooter>
             <Button onClick={() => setDeadlineVehicle(null)}>Fatto</Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={authOpen}
+        onOpenChange={(open) => {
+          setAuthOpen(open);
+          if (!open) {
+            setAuthError('');
+            setAuthPassword('');
+          }
+        }}
+      >
+        <DialogContent className="rounded-[1.75rem] p-5 sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 font-heading text-2xl font-black">
+              <LockKeyhole className="size-6 text-teal" /> {authTitle}
+            </DialogTitle>
+            <DialogDescription>
+              Usa email e password per proteggere il tuo accesso personale.
+            </DialogDescription>
+          </DialogHeader>
+          {!firebaseConfigured && (
+            <div className="flex gap-3 rounded-2xl border border-amber-300/60 bg-amber-50 p-4 text-sm text-amber-950 dark:bg-amber-950/30 dark:text-amber-100">
+              <LockKeyhole className="mt-0.5 size-5 shrink-0" />
+              <p>
+                Firebase non è ancora configurato. Aggiungi le variabili{' '}
+                <code className="font-bold">VITE_FIREBASE_*</code> in{' '}
+                <code className="font-bold">.env.local</code> e nei Secrets di
+                GitHub Actions per attivare questo pannello.
+              </p>
+            </div>
+          )}
+          <form className="grid gap-4" onSubmit={submitAuth}>
+            <Field label="Email">
+              <div className="relative">
+                <Mail className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  required
+                  autoComplete="email"
+                  className="pl-9"
+                  inputMode="email"
+                  placeholder="nome@esempio.it"
+                  type="email"
+                  value={authEmail}
+                  onChange={(event) => setAuthEmail(event.target.value)}
+                />
+              </div>
+            </Field>
+            {authMode !== 'reset' && (
+              <Field label="Password">
+                <div className="relative">
+                  <LockKeyhole className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    required
+                    autoComplete={
+                      authMode === 'signup'
+                        ? 'new-password'
+                        : 'current-password'
+                    }
+                    className="pl-9"
+                    minLength={6}
+                    placeholder="Almeno 6 caratteri"
+                    type="password"
+                    value={authPassword}
+                    onChange={(event) => setAuthPassword(event.target.value)}
+                  />
+                </div>
+              </Field>
+            )}
+            {authError && (
+              <p
+                aria-live="polite"
+                className="rounded-xl bg-coral/10 px-3 py-2 text-sm font-semibold text-coral"
+                role="alert"
+              >
+                {authError}
+              </p>
+            )}
+            <DialogFooter className="flex-col gap-2 sm:flex-col">
+              <Button
+                className="w-full bg-ink text-white hover:bg-ink/90"
+                disabled={authBusy || !firebaseConfigured}
+                type="submit"
+              >
+                {authBusy ? 'Attendi…' : authSubmitLabel}
+              </Button>
+              {authMode === 'login' && (
+                <Button
+                  className="w-full"
+                  onClick={() => {
+                    setAuthMode('reset');
+                    setAuthError('');
+                    setAuthPassword('');
+                  }}
+                  type="button"
+                  variant="ghost"
+                >
+                  Hai dimenticato la password?
+                </Button>
+              )}
+            </DialogFooter>
+          </form>
+          <div className="border-t border-border pt-4 text-center text-sm text-muted-foreground">
+            {authMode === 'signup' ? (
+              <>
+                Hai già un account?{' '}
+                <button
+                  className="font-bold text-ink underline-offset-4 hover:underline"
+                  onClick={() => {
+                    setAuthMode('login');
+                    setAuthError('');
+                  }}
+                  type="button"
+                >
+                  Accedi
+                </button>
+              </>
+            ) : authMode === 'reset' ? (
+              <>
+                Ricordi la password?{' '}
+                <button
+                  className="font-bold text-ink underline-offset-4 hover:underline"
+                  onClick={() => {
+                    setAuthMode('login');
+                    setAuthError('');
+                  }}
+                  type="button"
+                >
+                  Torna all’accesso
+                </button>
+              </>
+            ) : (
+              <>
+                Non hai un account?{' '}
+                <button
+                  className="font-bold text-ink underline-offset-4 hover:underline"
+                  onClick={() => {
+                    setAuthMode('signup');
+                    setAuthError('');
+                  }}
+                  type="button"
+                >
+                  Registrati
+                </button>
+              </>
+            )}
+          </div>
         </DialogContent>
       </Dialog>
 
