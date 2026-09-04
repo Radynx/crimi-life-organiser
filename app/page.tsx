@@ -20,6 +20,7 @@ import {
   LogIn,
   LogOut,
   Mail,
+  MapPin,
   Plus,
   ReceiptText,
   Settings2,
@@ -27,6 +28,7 @@ import {
   Sparkles,
   Trash2,
   Utensils,
+  UserRound,
   WalletCards,
 } from 'lucide-react';
 import {
@@ -113,6 +115,12 @@ type Appearance = {
   accentColor: string;
   highlightColor: string;
 };
+type Profile = {
+  username: string;
+  birthDate: string;
+  homeAddress: string;
+  additionalAddresses: string[];
+};
 type SavedTheme = Appearance & {
   id: string;
   name: string;
@@ -122,6 +130,7 @@ type AccountData = {
   workEntries: WorkEntry[];
   deadlines: Deadline[];
   settings: Settings;
+  profile: Profile;
   appearance: Appearance;
   savedThemes: SavedTheme[];
 };
@@ -269,6 +278,13 @@ const initialAppearance: Appearance = {
   highlightColor: '#f97360',
 };
 
+const initialProfile: Profile = {
+  username: '',
+  birthDate: '',
+  homeAddress: '',
+  additionalAddresses: [],
+};
+
 const euro = new Intl.NumberFormat('it-IT', {
   style: 'currency',
   currency: 'EUR',
@@ -360,6 +376,18 @@ function parseAccountData(raw: unknown): Partial<AccountData> {
     data.deadlines = value.deadlines as Deadline[];
   if (value.settings && typeof value.settings === 'object')
     data.settings = value.settings as Settings;
+  if (value.profile && typeof value.profile === 'object') {
+    const profile = value.profile as Record<string, unknown>;
+    data.profile = {
+      ...initialProfile,
+      ...profile,
+      additionalAddresses: Array.isArray(profile.additionalAddresses)
+        ? profile.additionalAddresses.filter(
+            (address): address is string => typeof address === 'string',
+          )
+        : [],
+    };
+  }
   if (value.appearance && typeof value.appearance === 'object')
     data.appearance = value.appearance as Appearance;
   if (Array.isArray(value.savedThemes))
@@ -405,12 +433,14 @@ export default function Home() {
   const [workEntries, setWorkEntries] = useState<WorkEntry[]>(initialWork);
   const [deadlines, setDeadlines] = useState<Deadline[]>(initialDeadlines);
   const [settings, setSettings] = useState<Settings>(initialSettings);
+  const [profile, setProfile] = useState<Profile>(initialProfile);
   const [appearance, setAppearance] = useState<Appearance>(initialAppearance);
   const [savedThemes, setSavedThemes] = useState<SavedTheme[]>([]);
   const [savedThemeName, setSavedThemeName] = useState('');
   const [selectedSavedThemeId, setSelectedSavedThemeId] = useState('');
   const [expenseOpen, setExpenseOpen] = useState(false);
   const [appearanceOpen, setAppearanceOpen] = useState(false);
+  const [accountOpen, setAccountOpen] = useState(false);
   const [authOpen, setAuthOpen] = useState(false);
   const [authMode, setAuthMode] = useState<'login' | 'signup' | 'reset'>(
     'login',
@@ -466,6 +496,7 @@ export default function Home() {
         setWorkEntries(initialWork);
         setDeadlines(initialDeadlines);
         setSettings(initialSettings);
+        setProfile(initialProfile);
         setAppearance(initialAppearance);
         setSavedThemes([]);
         setSelectedSavedThemeId('');
@@ -485,6 +516,12 @@ export default function Home() {
       if (data.workEntries) setWorkEntries(data.workEntries);
       if (data.deadlines) setDeadlines(data.deadlines);
       if (data.settings) setSettings({ ...initialSettings, ...data.settings });
+      if (data.profile)
+        setProfile({
+          ...initialProfile,
+          ...data.profile,
+          additionalAddresses: data.profile.additionalAddresses ?? [],
+        });
       if (data.appearance) {
         const mergedAppearance = { ...initialAppearance, ...data.appearance };
         const hasLegacyDefaults =
@@ -545,10 +582,15 @@ export default function Home() {
           workEntries: firstAccountData?.workEntries ?? initialWork,
           deadlines: firstAccountData?.deadlines ?? initialDeadlines,
           settings: { ...initialSettings, ...firstAccountData?.settings },
+          profile: { ...initialProfile, ...firstAccountData?.profile },
           appearance: { ...initialAppearance, ...firstAccountData?.appearance },
           savedThemes: firstAccountData?.savedThemes ?? [],
         };
-        await setDoc(accountRef, JSON.parse(JSON.stringify(initialData)));
+        await setDoc(
+          accountRef,
+          JSON.parse(JSON.stringify(initialData)),
+          { merge: true },
+        );
         if (migrationUsers.length === 0) {
           localStorage.setItem(
             migrationKey,
@@ -581,6 +623,7 @@ export default function Home() {
       workEntries,
       deadlines,
       settings,
+      profile,
       appearance,
       savedThemes,
     };
@@ -609,6 +652,7 @@ export default function Home() {
     deadlines,
     expenses,
     hydrated,
+    profile,
     savedThemes,
     settings,
     workEntries,
@@ -986,6 +1030,52 @@ export default function Home() {
     }
   }
 
+  async function sendAccountPasswordReset() {
+    const email = authUser?.email?.trim();
+    if (!firebaseAuth || !email) {
+      setNotice('Non è disponibile un indirizzo email per il reset.');
+      return;
+    }
+    try {
+      await sendPasswordResetEmail(firebaseAuth, email);
+      setNotice('Email di reset inviata. Controlla la tua casella di posta.');
+    } catch (error) {
+      setNotice(authErrorMessage(error));
+    }
+  }
+
+  function updateProfile<K extends keyof Profile>(
+    field: K,
+    value: Profile[K],
+  ) {
+    setProfile((current) => ({ ...current, [field]: value }));
+  }
+
+  function addAddress() {
+    setProfile((current) => ({
+      ...current,
+      additionalAddresses: [...current.additionalAddresses, ''],
+    }));
+  }
+
+  function updateAddress(index: number, value: string) {
+    setProfile((current) => ({
+      ...current,
+      additionalAddresses: current.additionalAddresses.map((address, item) =>
+        item === index ? value : address,
+      ),
+    }));
+  }
+
+  function removeAddress(index: number) {
+    setProfile((current) => ({
+      ...current,
+      additionalAddresses: current.additionalAddresses.filter(
+        (_, item) => item !== index,
+      ),
+    }));
+  }
+
   function saveTheme() {
     const name = savedThemeName.trim();
     if (!name) {
@@ -1107,10 +1197,17 @@ export default function Home() {
             </Button>
             {authUser ? (
               <>
-                <span className="hidden max-w-44 items-center gap-2 truncate rounded-2xl bg-white/10 px-3 py-2 text-xs font-semibold text-white/80 md:flex">
-                  <ShieldCheck className="size-4 shrink-0 text-lime" />
-                  <span className="truncate">{authUser.email}</span>
-                </span>
+                <Button
+                  aria-label="Apri impostazioni account"
+                  onClick={() => setAccountOpen(true)}
+                  variant="ghost"
+                  className="h-10 max-w-52 rounded-2xl px-3 text-white hover:bg-white/10 hover:text-white"
+                >
+                  <UserRound className="size-4 shrink-0 text-lime" />
+                  <span className="hidden truncate text-xs font-semibold text-white/80 md:block">
+                    {profile.username || authUser.email}
+                  </span>
+                </Button>
                 <Button
                   aria-label="Esci dall’account"
                   onClick={() => {
@@ -2146,6 +2243,170 @@ export default function Home() {
         </DialogContent>
       </Dialog>
 
+      <Dialog
+        open={accountOpen}
+        onOpenChange={(open) => {
+          setAccountOpen(open);
+          if (!open) setAccountError('');
+        }}
+      >
+        <DialogContent className="max-h-[92vh] overflow-y-auto rounded-[1.75rem] p-5 sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 font-heading text-2xl font-black">
+              <UserRound className="size-6 text-teal" /> Impostazioni account
+            </DialogTitle>
+            <DialogDescription>
+              Gestisci i tuoi dati personali e gli indirizzi salvati nel tuo
+              spazio Crimi.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-5">
+            <div className="rounded-2xl bg-muted/60 p-4">
+              <div className="mb-4 flex items-center gap-3">
+                <span className="grid size-10 place-items-center rounded-xl bg-teal text-white">
+                  <ShieldCheck className="size-5" />
+                </span>
+                <div className="min-w-0">
+                  <p className="text-sm font-bold">Account autenticato</p>
+                  <p className="truncate text-sm text-muted-foreground">
+                    {authUser.email}
+                  </p>
+                </div>
+              </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label="Nome utente">
+                  <Input
+                    autoComplete="nickname"
+                    placeholder="Come vuoi essere chiamato?"
+                    value={profile.username}
+                    onChange={(event) =>
+                      updateProfile('username', event.target.value)
+                    }
+                  />
+                </Field>
+                <Field label="Data di nascita">
+                  <Input
+                    autoComplete="bday"
+                    type="date"
+                    value={profile.birthDate}
+                    onChange={(event) =>
+                      updateProfile('birthDate', event.target.value)
+                    }
+                  />
+                </Field>
+              </div>
+              <div className="mt-4">
+                <Field label="Indirizzo di casa">
+                  <div className="relative">
+                    <MapPin className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      autoComplete="street-address"
+                      className="pl-9"
+                      placeholder="Via, numero, città"
+                      value={profile.homeAddress}
+                      onChange={(event) =>
+                        updateProfile('homeAddress', event.target.value)
+                      }
+                    />
+                  </div>
+                </Field>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-border p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-bold">Altri indirizzi</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Salva lavoro, famiglia o altri luoghi utili.
+                  </p>
+                </div>
+                <Button
+                  className="shrink-0 rounded-xl"
+                  onClick={addAddress}
+                  size="sm"
+                  type="button"
+                  variant="outline"
+                >
+                  <Plus /> Aggiungi
+                </Button>
+              </div>
+              <div className="mt-4 space-y-2">
+                {profile.additionalAddresses.length ? (
+                  profile.additionalAddresses.map((address, index) => (
+                    <div key={`address-${index}`} className="flex gap-2">
+                      <div className="relative min-w-0 flex-1">
+                        <MapPin className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                        <Input
+                          aria-label={`Altro indirizzo ${index + 1}`}
+                          autoComplete="street-address"
+                          className="pl-9"
+                          placeholder={`Indirizzo ${index + 1}`}
+                          value={address}
+                          onChange={(event) =>
+                            updateAddress(index, event.target.value)
+                          }
+                        />
+                      </div>
+                      <Button
+                        aria-label={`Rimuovi indirizzo ${index + 1}`}
+                        className="shrink-0"
+                        onClick={() => removeAddress(index)}
+                        size="icon"
+                        type="button"
+                        variant="ghost"
+                      >
+                        <Trash2 />
+                      </Button>
+                    </div>
+                  ))
+                ) : (
+                  <p className="rounded-xl bg-muted px-3 py-3 text-sm text-muted-foreground">
+                    Nessun indirizzo aggiuntivo.
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-3 rounded-2xl bg-ink p-4 text-white sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-sm font-bold">Password</p>
+                <p className="mt-1 text-xs text-white/60">
+                  Ricevi un link sicuro per scegliere una nuova password.
+                </p>
+              </div>
+              <Button
+                className="shrink-0 rounded-xl bg-white text-ink hover:bg-white/90"
+                onClick={() => void sendAccountPasswordReset()}
+                type="button"
+                variant="secondary"
+              >
+                <Mail /> Invia reset
+              </Button>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              onClick={() => {
+                const cleaned: Profile = {
+                  ...profile,
+                  username: profile.username.trim(),
+                  homeAddress: profile.homeAddress.trim(),
+                  additionalAddresses: profile.additionalAddresses
+                    .map((address) => address.trim())
+                    .filter(Boolean),
+                };
+                setProfile(cleaned);
+                setAccountOpen(false);
+                setNotice('Profilo account aggiornato.');
+              }}
+            >
+              Salva profilo
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={appearanceOpen} onOpenChange={setAppearanceOpen}>
         <DialogContent className="max-h-[92vh] overflow-y-auto rounded-[1.75rem] p-5 sm:max-w-xl">
           <DialogHeader>
@@ -2358,6 +2619,9 @@ function AuthGate() {
   const [mode, setMode] = useState<'login' | 'signup' | 'reset'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [username, setUsername] = useState('');
+  const [birthDate, setBirthDate] = useState('');
+  const [homeAddress, setHomeAddress] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
@@ -2388,6 +2652,10 @@ function AuthGate() {
       setError('La password deve contenere almeno 6 caratteri.');
       return;
     }
+    if (mode === 'signup' && username.trim().length < 2) {
+      setError('Inserisci un nome utente di almeno 2 caratteri.');
+      return;
+    }
     setBusy(true);
     try {
       if (mode === 'reset') {
@@ -2398,11 +2666,25 @@ function AuthGate() {
           'Email di reset inviata. Controlla la tua casella di posta.',
         );
       } else if (mode === 'signup') {
-        await createUserWithEmailAndPassword(
+        const credential = await createUserWithEmailAndPassword(
           firebaseAuth,
           cleanEmail,
           password,
         );
+        if (firebaseDb) {
+          await setDoc(
+            doc(firebaseDb, 'users', credential.user.uid, 'organiser', 'state'),
+            {
+              profile: {
+                ...initialProfile,
+                username: username.trim(),
+                birthDate,
+                homeAddress: homeAddress.trim(),
+              },
+            },
+            { merge: true },
+          ).catch(() => undefined);
+        }
       } else {
         await signInWithEmailAndPassword(firebaseAuth, cleanEmail, password);
       }
@@ -2481,6 +2763,39 @@ function AuthGate() {
                   onChange={(event) => setEmail(event.target.value)}
                 />
               </Field>
+              {mode === 'signup' && (
+                <>
+                  <Field label="Nome utente">
+                    <Input
+                      required
+                      autoComplete="nickname"
+                      placeholder="Come vuoi essere chiamato?"
+                      value={username}
+                      onChange={(event) => setUsername(event.target.value)}
+                    />
+                  </Field>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <Field label="Data di nascita (facoltativa)">
+                      <Input
+                        autoComplete="bday"
+                        type="date"
+                        value={birthDate}
+                        onChange={(event) => setBirthDate(event.target.value)}
+                      />
+                    </Field>
+                    <Field label="Indirizzo di casa (facoltativo)">
+                      <Input
+                        autoComplete="street-address"
+                        placeholder="Via, numero, città"
+                        value={homeAddress}
+                        onChange={(event) =>
+                          setHomeAddress(event.target.value)
+                        }
+                      />
+                    </Field>
+                  </div>
+                </>
+              )}
               {mode !== 'reset' && (
                 <Field label="Password">
                   <Input
