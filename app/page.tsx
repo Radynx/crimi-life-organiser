@@ -1100,7 +1100,7 @@ export default function Home() {
     () => bankAccounts.reduce((sum, account) => sum + account.balance, 0),
     [bankAccounts],
   );
-  const availableBalance = bankTotal + wage - monthExpenseTotal;
+  const availableBalance = bankTotal;
 
   const categoryData = useMemo(() => {
     const grouped = monthExpenses.reduce<Record<string, number>>(
@@ -1954,13 +1954,13 @@ export default function Home() {
                     </p>
                     <p className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1.5 text-sm font-semibold text-lime">
                       <ArrowUpRight className="size-4" />{' '}
-                      {euro.format(wage - monthExpenseTotal)} questo mese
+                      {euro.format(wage)} entrate teoriche questo mese
                     </p>
                   </div>
                   <WalletCards className="size-7 text-white/60" />
                 </div>
                 <div className="mt-10 grid grid-cols-2 gap-3 sm:max-w-md">
-                  <Metric label="Entrate stimate" value={euro.format(wage)} />
+                  <Metric label="Entrate teoriche" value={euro.format(wage)} />
                   <Metric
                     label="Uscite"
                     value={euro.format(monthExpenseTotal)}
