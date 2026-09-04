@@ -1922,14 +1922,14 @@ function ColorControl({
         {(['r', 'g', 'b'] as const).map((channel) => (
           <label
             key={channel}
-            className="rgb-channel flex items-center gap-1 rounded-lg bg-muted px-1.5"
+            className="rgb-channel flex min-w-0 items-center gap-1 overflow-hidden rounded-lg bg-muted px-1.5"
           >
             <span className="text-[0.65rem] font-black uppercase text-muted-foreground">
               {channel}
             </span>
             <Input
               aria-label={`${label} ${channel.toUpperCase()}`}
-              className="h-7 border-0 bg-transparent px-0 text-center text-xs shadow-none"
+              className="h-8 w-0 min-w-0 flex-1 border-0 bg-transparent px-0 text-center text-sm font-semibold tabular-nums shadow-none"
               inputMode="numeric"
               max="255"
               min="0"
