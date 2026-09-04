@@ -447,7 +447,15 @@ const initialProfile: Profile = {
   homeAddress: '',
   additionalAddresses: [],
 };
-const initialBankAccounts: BankAccount[] = [];
+const initialBankAccounts: BankAccount[] = [
+  {
+    id: 'bank-main',
+    name: 'Conto principale',
+    balance: initialSettings.openingBalance,
+    iban: '',
+    notes: '',
+  },
+];
 
 const euro = new Intl.NumberFormat('it-IT', {
   style: 'currency',
@@ -632,8 +640,6 @@ export default function Home() {
   const [selectedSavedThemeId, setSelectedSavedThemeId] = useState('');
   const [expenseOpen, setExpenseOpen] = useState(false);
   const [appearanceOpen, setAppearanceOpen] = useState(false);
-  const [balanceOpen, setBalanceOpen] = useState(false);
-  const [balanceDraft, setBalanceDraft] = useState('');
   const [bankOpen, setBankOpen] = useState(false);
   const [editingBankId, setEditingBankId] = useState<string | null>(null);
   const [bankDraft, setBankDraft] = useState({
@@ -756,6 +762,13 @@ export default function Home() {
           })),
         );
       if (data.bankAccounts) setBankAccounts(data.bankAccounts);
+      else if (data.settings?.openingBalance !== undefined)
+        setBankAccounts([
+          {
+            ...initialBankAccounts[0],
+            balance: Number(data.settings.openingBalance) || 0,
+          },
+        ]);
       if (data.settings) setSettings(mergeSettings(data.settings));
       if (data.profile)
         setProfile({
@@ -823,7 +836,16 @@ export default function Home() {
           workEntries: firstAccountData?.workEntries ?? initialWork,
           deadlines: firstAccountData?.deadlines ?? initialDeadlines,
           vehicles: firstAccountData?.vehicles ?? initialVehicles,
-          bankAccounts: firstAccountData?.bankAccounts ?? initialBankAccounts,
+          bankAccounts:
+            firstAccountData?.bankAccounts ??
+            (firstAccountData?.settings?.openingBalance !== undefined
+              ? [
+                  {
+                    ...initialBankAccounts[0],
+                    balance: Number(firstAccountData.settings.openingBalance) || 0,
+                  },
+                ]
+              : initialBankAccounts),
           settings: mergeSettings(firstAccountData?.settings),
           profile: { ...initialProfile, ...firstAccountData?.profile },
           appearance: { ...initialAppearance, ...firstAccountData?.appearance },
@@ -1022,7 +1044,11 @@ export default function Home() {
   }, [monthWork, settings.mealMinHours]);
   const wage = totalHours * settings.hourlyRate;
   const benefits = mealCount * settings.mealValue;
-  const availableBalance = settings.openingBalance + wage - monthExpenseTotal;
+  const bankTotal = useMemo(
+    () => bankAccounts.reduce((sum, account) => sum + account.balance, 0),
+    [bankAccounts],
+  );
+  const availableBalance = bankTotal + wage - monthExpenseTotal;
 
   const categoryData = useMemo(() => {
     const grouped = monthExpenses.reduce<Record<string, number>>(
@@ -1203,23 +1229,6 @@ export default function Home() {
       });
       setNotice('Notifiche attivate.');
     } else setNotificationHelpOpen(true);
-  }
-
-  function openBalanceEditor() {
-    setBalanceDraft(String(settings.openingBalance));
-    setBalanceOpen(true);
-  }
-
-  function saveBalance(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const value = Number(balanceDraft.replace(',', '.'));
-    if (!Number.isFinite(value)) {
-      setNotice('Inserisci un saldo valido.');
-      return;
-    }
-    setSettings((current) => ({ ...current, openingBalance: value }));
-    setBalanceOpen(false);
-    setNotice('Saldo disponibile aggiornato.');
   }
 
   function openNewBank() {
@@ -1904,14 +1913,6 @@ export default function Home() {
                     value={euro.format(monthExpenseTotal)}
                   />
                 </div>
-                <Button
-                  className="mt-4 w-fit rounded-xl border border-white/20 bg-white/10 text-white hover:bg-white/20 hover:text-white"
-                  onClick={openBalanceEditor}
-                  type="button"
-                  variant="ghost"
-                >
-                  <Pencil className="size-4" /> Modifica saldo
-                </Button>
               </CardContent>
             </Card>
 
@@ -2088,7 +2089,7 @@ export default function Home() {
                     I miei conti
                   </CardTitle>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    Banche e portafogli dove tieni i tuoi soldi.
+                    Il saldo disponibile segue il totale dei conti.
                   </p>
                 </div>
                 <Button
@@ -2602,19 +2603,6 @@ export default function Home() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <Field label="Saldo iniziale (€)">
-                    <Input
-                      type="number"
-                      step="0.01"
-                      value={settings.openingBalance}
-                      onChange={(e) =>
-                        setSettings({
-                          ...settings,
-                          openingBalance: Number(e.target.value),
-                        })
-                      }
-                    />
-                  </Field>
                   <Field label="Tariffa oraria (€/h)">
                     <Input
                       type="number"
@@ -2764,43 +2752,6 @@ export default function Home() {
           </div>
         </TabsContent>
       </Tabs>
-
-      <Dialog open={balanceOpen} onOpenChange={setBalanceOpen}>
-        <DialogContent className="rounded-[1.75rem] p-5 sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="font-heading text-2xl font-black">
-              Modifica saldo disponibile
-            </DialogTitle>
-            <DialogDescription>
-              Imposta il saldo di partenza del tuo spazio Crimi. Le entrate e le
-              uscite del mese vengono calcolate automaticamente a partire da qui.
-            </DialogDescription>
-          </DialogHeader>
-          <form className="space-y-4" onSubmit={saveBalance}>
-            <Field label="Saldo disponibile (€)">
-              <Input
-                inputMode="decimal"
-                step="0.01"
-                type="number"
-                value={balanceDraft}
-                onChange={(event) => setBalanceDraft(event.target.value)}
-              />
-            </Field>
-            <DialogFooter>
-              <Button
-                onClick={() => setBalanceOpen(false)}
-                type="button"
-                variant="ghost"
-              >
-                Annulla
-              </Button>
-              <Button className="bg-teal font-bold text-white hover:bg-teal/90" type="submit">
-                <Check /> Salva saldo
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
 
       <Dialog
         open={bankOpen}
