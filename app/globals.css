@@ -109,3 +109,15 @@
   background: #d7df23;
   color: #142f2a;
 }
+
+/* I campi RGB restano numerici, ma senza gli spinner nativi che comprimono
+   e sovrappongono le cifre nei controlli compatti del menu impostazioni. */
+.rgb-channel input[type='number'] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+.rgb-channel input[type='number']::-webkit-inner-spin-button,
+.rgb-channel input[type='number']::-webkit-outer-spin-button {
+  margin: 0;
+  -webkit-appearance: none;
+}

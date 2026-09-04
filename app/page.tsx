@@ -1922,7 +1922,7 @@ function ColorControl({
         {(['r', 'g', 'b'] as const).map((channel) => (
           <label
             key={channel}
-            className="flex items-center gap-1 rounded-lg bg-muted px-1.5"
+            className="rgb-channel flex items-center gap-1 rounded-lg bg-muted px-1.5"
           >
             <span className="text-[0.65rem] font-black uppercase text-muted-foreground">
               {channel}
