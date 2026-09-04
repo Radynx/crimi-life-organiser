@@ -36,7 +36,7 @@ export default function RootLayout({
   return (
     <html lang="it">
       <head>
-        <meta name="theme-color" content="#142f2a" />
+        <meta name="theme-color" content="#0f3d5e" />
         <meta name="mobile-web-app-capable" content="yes" />
       </head>
       <body

@@ -110,6 +110,10 @@ type Appearance = {
   accentColor: string;
   highlightColor: string;
 };
+type SavedTheme = Appearance & {
+  id: string;
+  name: string;
+};
 type ToolRegistration = {
   name: string;
   title: string;
@@ -249,9 +253,9 @@ const FONT_STACKS = {
 const initialAppearance: Appearance = {
   theme: 'system',
   font: 'geist',
-  brandColor: '#142f2a',
-  accentColor: '#d7df23',
-  highlightColor: '#ff6b4a',
+  brandColor: '#0f3d5e',
+  accentColor: '#21a179',
+  highlightColor: '#f97360',
 };
 
 const euro = new Intl.NumberFormat('it-IT', {
@@ -363,6 +367,9 @@ export default function Home() {
   const [deadlines, setDeadlines] = useState<Deadline[]>(initialDeadlines);
   const [settings, setSettings] = useState<Settings>(initialSettings);
   const [appearance, setAppearance] = useState<Appearance>(initialAppearance);
+  const [savedThemes, setSavedThemes] = useState<SavedTheme[]>([]);
+  const [savedThemeName, setSavedThemeName] = useState('');
+  const [selectedSavedThemeId, setSelectedSavedThemeId] = useState('');
   const [expenseOpen, setExpenseOpen] = useState(false);
   const [appearanceOpen, setAppearanceOpen] = useState(false);
   const [authOpen, setAuthOpen] = useState(false);
@@ -406,13 +413,30 @@ export default function Home() {
           deadlines: Deadline[];
           settings: Settings;
           appearance: Appearance;
+          savedThemes: SavedTheme[];
         }>;
         if (data.expenses) setExpenses(data.expenses);
         if (data.workEntries) setWorkEntries(data.workEntries);
         if (data.deadlines) setDeadlines(data.deadlines);
         if (data.settings) setSettings(data.settings);
-        if (data.appearance)
-          setAppearance({ ...initialAppearance, ...data.appearance });
+        if (data.appearance) {
+          const mergedAppearance = { ...initialAppearance, ...data.appearance };
+          const hasLegacyDefaults =
+            data.appearance.brandColor?.toLowerCase() === '#142f2a' &&
+            data.appearance.accentColor?.toLowerCase() === '#d7df23' &&
+            data.appearance.highlightColor?.toLowerCase() === '#ff6b4a';
+          setAppearance(
+            hasLegacyDefaults
+              ? {
+                  ...mergedAppearance,
+                  brandColor: initialAppearance.brandColor,
+                  accentColor: initialAppearance.accentColor,
+                  highlightColor: initialAppearance.highlightColor,
+                }
+              : mergedAppearance,
+          );
+        }
+        if (Array.isArray(data.savedThemes)) setSavedThemes(data.savedThemes);
       }
     } catch {
       setNotice('Non è stato possibile leggere i dati salvati.');
@@ -431,12 +455,21 @@ export default function Home() {
           deadlines,
           settings,
           appearance,
+          savedThemes,
         }),
       );
     } catch {
       setNotice('Spazio locale esaurito: rimuovi alcune foto degli scontrini.');
     }
-  }, [appearance, deadlines, expenses, hydrated, settings, workEntries]);
+  }, [
+    appearance,
+    deadlines,
+    expenses,
+    hydrated,
+    savedThemes,
+    settings,
+    workEntries,
+  ]);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -808,6 +841,45 @@ export default function Home() {
     } finally {
       setAuthBusy(false);
     }
+  }
+
+  function saveTheme() {
+    const name = savedThemeName.trim();
+    if (!name) {
+      setNotice('Dai un nome al tema prima di salvarlo.');
+      return;
+    }
+    const id = uid('theme');
+    setSavedThemes((current) => [{ id, name, ...appearance }, ...current]);
+    setSelectedSavedThemeId(id);
+    setSavedThemeName('');
+    setNotice(`Tema “${name}” salvato.`);
+  }
+
+  function applySavedTheme(id: string) {
+    setSelectedSavedThemeId(id);
+    const saved = savedThemes.find((theme) => theme.id === id);
+    if (!saved) return;
+    setAppearance({
+      theme: saved.theme,
+      font: saved.font,
+      brandColor: saved.brandColor,
+      accentColor: saved.accentColor,
+      highlightColor: saved.highlightColor,
+    });
+    setNotice(`Tema “${saved.name}” applicato.`);
+  }
+
+  function deleteSelectedTheme() {
+    if (!selectedSavedThemeId) return;
+    const deleted = savedThemes.find(
+      (theme) => theme.id === selectedSavedThemeId,
+    );
+    setSavedThemes((current) =>
+      current.filter((theme) => theme.id !== selectedSavedThemeId),
+    );
+    setSelectedSavedThemeId('');
+    if (deleted) setNotice(`Tema “${deleted.name}” eliminato.`);
   }
 
   const vehicleSpend = (vehicle: 'Macchina' | 'Moto') =>
@@ -1982,6 +2054,61 @@ export default function Home() {
                   </NativeSelectOption>
                 </NativeSelect>
               </Field>
+            </div>
+            <div className="space-y-3 rounded-2xl bg-muted/60 p-4">
+              <div>
+                <p className="text-sm font-bold">Temi salvati</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Salva questa combinazione di colori, font e modalità per
+                  riutilizzarla quando vuoi.
+                </p>
+              </div>
+              <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+                <NativeSelect
+                  aria-label="Scegli un tema salvato"
+                  className="w-full"
+                  disabled={!savedThemes.length}
+                  value={selectedSavedThemeId}
+                  onChange={(event) => applySavedTheme(event.target.value)}
+                >
+                  <NativeSelectOption value="">
+                    {savedThemes.length
+                      ? 'Scegli un tema salvato'
+                      : 'Nessun tema salvato'}
+                  </NativeSelectOption>
+                  {savedThemes.map((theme) => (
+                    <NativeSelectOption key={theme.id} value={theme.id}>
+                      {theme.name}
+                    </NativeSelectOption>
+                  ))}
+                </NativeSelect>
+                <Button
+                  aria-label="Elimina tema selezionato"
+                  className="sm:w-auto"
+                  disabled={!selectedSavedThemeId}
+                  onClick={deleteSelectedTheme}
+                  type="button"
+                  variant="outline"
+                >
+                  <Trash2 />
+                  <span>Elimina</span>
+                </Button>
+              </div>
+              <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+                <Input
+                  aria-label="Nome del nuovo tema"
+                  placeholder="Nome del nuovo tema"
+                  value={savedThemeName}
+                  onChange={(event) => setSavedThemeName(event.target.value)}
+                />
+                <Button
+                  className="bg-teal text-white hover:bg-teal/90 sm:w-auto"
+                  onClick={saveTheme}
+                  type="button"
+                >
+                  <Check /> Salva tema
+                </Button>
+              </div>
             </div>
             <div className="space-y-3">
               <div>
