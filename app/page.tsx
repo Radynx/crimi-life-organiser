@@ -3701,7 +3701,7 @@ export default function Home() {
       </Dialog>
 
       <Dialog open={appearanceOpen} onOpenChange={setAppearanceOpen}>
-        <DialogContent className="h-[100dvh] max-h-[100dvh] w-screen max-w-none overflow-y-auto rounded-none border-0 bg-background p-4 sm:p-8">
+        <DialogContent className="h-[100dvh] max-h-[100dvh] w-screen max-w-none overflow-y-auto rounded-none border-0 bg-background p-4 sm:max-w-none sm:p-8">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 font-heading text-2xl font-black">
               <Settings2 className="size-6 text-teal" /> Impostazioni
