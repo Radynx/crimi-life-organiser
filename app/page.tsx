@@ -60,14 +60,6 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -83,6 +75,7 @@ import {
 } from '@/components/ui/native-select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
+import { Switch } from '@/components/ui/switch';
 import { firebaseAuth, firebaseConfigured, firebaseDb } from '@/lib/firebase';
 
 type Section = 'dashboard' | 'spese' | 'mezzi' | 'lavoro';
@@ -142,6 +135,18 @@ type Settings = {
   hourlyRate: number;
   mealMinHours: number;
   mealValue: number;
+  company: Company;
+  enabledSections: Record<Section, boolean>;
+};
+type Company = {
+  name: string;
+  address: string;
+  city: string;
+  postalCode: string;
+  vatNumber: string;
+  phone: string;
+  email: string;
+  notes: string;
 };
 type Appearance = {
   theme: 'system' | 'light' | 'dark';
@@ -191,6 +196,37 @@ const CATEGORIES = [
   'Casa',
   'Salute',
   'Altro',
+];
+const SECTION_OPTIONS: {
+  value: Section;
+  label: string;
+  description: string;
+  icon: typeof LayoutDashboard;
+}[] = [
+  {
+    value: 'dashboard',
+    label: 'Dashboard',
+    description: 'Saldo, grafici e consigli smart.',
+    icon: LayoutDashboard,
+  },
+  {
+    value: 'spese',
+    label: 'Spese',
+    description: 'Registro acquisti e scontrini.',
+    icon: ReceiptText,
+  },
+  {
+    value: 'mezzi',
+    label: 'Mezzi',
+    description: 'Veicoli, km, assicurazioni e scadenze.',
+    icon: CarFront,
+  },
+  {
+    value: 'lavoro',
+    label: 'Lavoro',
+    description: 'Ore lavorate, paga e buoni pasto.',
+    icon: Clock3,
+  },
 ];
 const VEHICLE_CATEGORIES = new Set([
   'Carburante',
@@ -360,7 +396,25 @@ const initialSettings: Settings = {
   hourlyRate: 12.5,
   mealMinHours: 6,
   mealValue: 7,
+  company: {
+    name: '',
+    address: '',
+    city: '',
+    postalCode: '',
+    vatNumber: '',
+    phone: '',
+    email: '',
+    notes: '',
+  },
+  enabledSections: {
+    dashboard: true,
+    spese: true,
+    mezzi: true,
+    lavoro: true,
+  },
 };
+const initialCompany = initialSettings.company;
+const initialEnabledSections = initialSettings.enabledSections;
 
 const FONT_STACKS = {
   geist: 'var(--font-geist-sans), Arial, Helvetica, sans-serif',
@@ -465,6 +519,18 @@ function authErrorMessage(error: unknown) {
   );
 }
 
+function mergeSettings(raw?: Partial<Settings>): Settings {
+  return {
+    ...initialSettings,
+    ...raw,
+    company: { ...initialCompany, ...raw?.company },
+    enabledSections: {
+      ...initialEnabledSections,
+      ...raw?.enabledSections,
+    },
+  };
+}
+
 function parseAccountData(raw: unknown): Partial<AccountData> {
   if (!raw || typeof raw !== 'object') return {};
   const value = raw as Record<string, unknown>;
@@ -545,9 +611,10 @@ export default function Home() {
   const [expenseOpen, setExpenseOpen] = useState(false);
   const [appearanceOpen, setAppearanceOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState<
-    'account' | 'personalizza' | 'temi'
+    'account' | 'personalizza' | 'temi' | 'sezioni'
   >('personalizza');
   const [accountOpen, setAccountOpen] = useState(false);
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [vehicleOpen, setVehicleOpen] = useState(false);
   const [editingVehicleId, setEditingVehicleId] = useState<string | null>(null);
   const [authOpen, setAuthOpen] = useState(false);
@@ -654,7 +721,7 @@ export default function Home() {
               : [],
           })),
         );
-      if (data.settings) setSettings({ ...initialSettings, ...data.settings });
+      if (data.settings) setSettings(mergeSettings(data.settings));
       if (data.profile)
         setProfile({
           ...initialProfile,
@@ -721,7 +788,7 @@ export default function Home() {
           workEntries: firstAccountData?.workEntries ?? initialWork,
           deadlines: firstAccountData?.deadlines ?? initialDeadlines,
           vehicles: firstAccountData?.vehicles ?? initialVehicles,
-          settings: { ...initialSettings, ...firstAccountData?.settings },
+          settings: mergeSettings(firstAccountData?.settings),
           profile: { ...initialProfile, ...firstAccountData?.profile },
           appearance: { ...initialAppearance, ...firstAccountData?.appearance },
           savedThemes: firstAccountData?.savedThemes ?? [],
@@ -861,6 +928,14 @@ export default function Home() {
       }
     });
   }, []);
+
+  useEffect(() => {
+    if (settings.enabledSections[section]) return;
+    const fallback = SECTION_OPTIONS.find(
+      ({ value }) => settings.enabledSections[value],
+    );
+    if (fallback) setSection(fallback.value);
+  }, [section, settings.enabledSections]);
 
   const month = currentMonthKey();
   const monthExpenses = useMemo(
@@ -1236,6 +1311,34 @@ export default function Home() {
     setNotice('Profilo account aggiornato.');
   }
 
+  function toggleSection(sectionName: Section, enabled: boolean) {
+    const currentlyEnabled = Object.values(settings.enabledSections).filter(
+      Boolean,
+    ).length;
+    if (!enabled && currentlyEnabled <= 1) {
+      setNotice('Mantieni almeno una sezione attiva.');
+      return;
+    }
+    const enabledSections = {
+      ...settings.enabledSections,
+      [sectionName]: enabled,
+    };
+    setSettings({ ...settings, enabledSections });
+    if (!enabled && section === sectionName) {
+      const fallback = (Object.keys(enabledSections) as Section[]).find(
+        (value) => enabledSections[value],
+      );
+      if (fallback) setSection(fallback);
+    }
+  }
+
+  function updateCompany(field: keyof Company, value: string) {
+    setSettings((current) => ({
+      ...current,
+      company: { ...current.company, [field]: value },
+    }));
+  }
+
   function openNewVehicle() {
     setEditingVehicleId(null);
     setVehicleDraft({
@@ -1433,7 +1536,7 @@ export default function Home() {
           (!item.vehicleId && item.vehicle === vehicle.name),
       )
       .reduce((sum, item) => sum + item.amount, 0);
-  const navItems: {
+  const allNavItems: {
     value: Section;
     label: string;
     icon: typeof LayoutDashboard;
@@ -1443,6 +1546,9 @@ export default function Home() {
     { value: 'mezzi', label: 'Mezzi', icon: CarFront },
     { value: 'lavoro', label: 'Lavoro', icon: Clock3 },
   ];
+  const navItems = allNavItems.filter(
+    ({ value }) => settings.enabledSections[value],
+  );
   const authTitle =
     authMode === 'signup'
       ? 'Crea il tuo account'
@@ -1510,42 +1616,55 @@ export default function Home() {
               <span className="absolute right-2 top-2 size-2 rounded-full bg-coral ring-2 ring-ink" />
             </Button>
             {authUser ? (
-              <>
-                <DropdownMenu>
-                  <DropdownMenuTrigger
-                    aria-label="Apri menu account"
-                    className="inline-flex h-10 max-w-52 items-center gap-2 rounded-2xl px-3 text-white transition hover:bg-white/10 focus-visible:ring-2 focus-visible:ring-lime"
+              <div className="relative">
+                <Button
+                  aria-expanded={accountMenuOpen}
+                  aria-haspopup="menu"
+                  aria-label="Apri menu account"
+                  className="h-10 max-w-52 rounded-2xl px-3 text-white hover:bg-white/10 hover:text-white"
+                  onClick={() => setAccountMenuOpen((open) => !open)}
+                  type="button"
+                  variant="ghost"
+                >
+                  <UserRound className="size-4 shrink-0 text-lime" />
+                  <span className="hidden truncate text-xs font-semibold text-white/80 md:block">
+                    {profile.username || authUser.email}
+                  </span>
+                </Button>
+                {accountMenuOpen && (
+                  <div
+                    className="absolute right-0 top-[calc(100%+0.5rem)] z-[60] w-60 rounded-2xl bg-card p-2 text-foreground shadow-2xl ring-1 ring-ink/10"
+                    role="menu"
                   >
-                    <UserRound className="size-4 shrink-0 text-lime" />
-                    <span className="hidden truncate text-xs font-semibold text-white/80 md:block">
-                      {profile.username || authUser.email}
-                    </span>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent
-                    align="end"
-                    className="w-56 rounded-2xl bg-card p-2 text-foreground"
-                  >
-                    <DropdownMenuLabel className="px-3 py-2">
+                    <p className="truncate px-3 py-2 text-xs font-bold text-muted-foreground">
                       {profile.username || 'Il mio account'}
-                    </DropdownMenuLabel>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem
-                      className="rounded-xl px-3 py-2.5"
-                      onClick={() => setAccountOpen(true)}
-                    >
-                      <Settings2 /> Impostazioni account
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      className="rounded-xl px-3 py-2.5 text-destructive focus:text-destructive"
+                    </p>
+                    <div className="my-1 h-px bg-border" />
+                    <button
+                      className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm font-semibold transition hover:bg-muted"
                       onClick={() => {
+                        setAccountMenuOpen(false);
+                        setAccountOpen(true);
+                      }}
+                      role="menuitem"
+                      type="button"
+                    >
+                      <Settings2 className="size-4" /> Impostazioni account
+                    </button>
+                    <button
+                      className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-destructive transition hover:bg-destructive/10"
+                      onClick={() => {
+                        setAccountMenuOpen(false);
                         if (firebaseAuth) void signOut(firebaseAuth);
                       }}
+                      role="menuitem"
+                      type="button"
                     >
-                      <LogOut /> Esci
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </>
+                      <LogOut className="size-4" /> Esci
+                    </button>
+                  </div>
+                )}
+              </div>
             ) : (
               <Button
                 aria-label="Accedi o crea un account"
@@ -1573,12 +1692,14 @@ export default function Home() {
               <Settings2 />
               <span className="hidden sm:inline">Impostazioni</span>
             </Button>
-            <Button
-              onClick={() => setExpenseOpen(true)}
-              className="hidden h-10 rounded-2xl bg-lime px-4 font-bold text-ink hover:bg-lime/85 sm:inline-flex"
-            >
-              <Plus /> Nuova spesa
-            </Button>
+            {settings.enabledSections.spese && (
+              <Button
+                onClick={() => setExpenseOpen(true)}
+                className="hidden h-10 rounded-2xl bg-lime px-4 font-bold text-ink hover:bg-lime/85 sm:inline-flex"
+              >
+                <Plus /> Nuova spesa
+              </Button>
+            )}
           </div>
         </div>
       </header>
@@ -1816,20 +1937,24 @@ export default function Home() {
               </CardContent>
             </Card>
             <div className="grid grid-cols-2 gap-3">
-              <QuickCard
-                color="bg-teal"
-                icon={CarFront}
-                title="I miei mezzi"
-                text={`${deadlines.filter((d) => daysUntil(d.date) <= 45).length} scadenze vicine`}
-                onClick={() => setSection('mezzi')}
-              />
-              <QuickCard
-                color="bg-coral"
-                icon={Clock3}
-                title="Lavoro"
-                text={`${totalHours.toLocaleString('it-IT', { maximumFractionDigits: 1 })} ore`}
-                onClick={() => setSection('lavoro')}
-              />
+              {settings.enabledSections.mezzi && (
+                <QuickCard
+                  color="bg-teal"
+                  icon={CarFront}
+                  title="I miei mezzi"
+                  text={`${deadlines.filter((d) => daysUntil(d.date) <= 45).length} scadenze vicine`}
+                  onClick={() => setSection('mezzi')}
+                />
+              )}
+              {settings.enabledSections.lavoro && (
+                <QuickCard
+                  color="bg-coral"
+                  icon={Clock3}
+                  title="Lavoro"
+                  text={`${totalHours.toLocaleString('it-IT', { maximumFractionDigits: 1 })} ore`}
+                  onClick={() => setSection('lavoro')}
+                />
+              )}
             </div>
           </aside>
         </TabsContent>
@@ -2236,11 +2361,11 @@ export default function Home() {
                 </CardContent>
               </Card>
             </section>
-            <aside>
-              <Card className="sticky top-24 rounded-[1.75rem] border-0 bg-lime shadow-sm ring-0">
+            <aside className="space-y-5">
+              <Card className="rounded-[1.75rem] border-0 bg-card shadow-sm ring-1 ring-ink/7">
                 <CardHeader className="px-5 pt-5">
                   <CardTitle className="flex items-center gap-2 font-heading text-xl font-extrabold">
-                    <Settings2 className="size-5" /> Impostazioni paga
+                    <Settings2 className="size-5 text-teal" /> Impostazioni paga
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
@@ -2307,6 +2432,99 @@ export default function Home() {
                       {euro.format(wage + benefits)}
                     </p>
                   </div>
+                </CardContent>
+              </Card>
+              <Card className="rounded-[1.75rem] border-0 bg-card shadow-sm ring-1 ring-ink/7">
+                <CardHeader className="px-5 pt-5">
+                  <CardTitle className="flex items-center gap-2 font-heading text-xl font-extrabold">
+                    <MapPin className="size-5 text-teal" /> Azienda
+                  </CardTitle>
+                  <p className="text-sm text-muted-foreground">
+                    Salva i riferimenti del luogo in cui lavori.
+                  </p>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <Field label="Nome azienda">
+                    <Input
+                      autoComplete="organization"
+                      placeholder="Es. Azienda S.r.l."
+                      value={settings.company.name}
+                      onChange={(event) =>
+                        updateCompany('name', event.target.value)
+                      }
+                    />
+                  </Field>
+                  <Field label="Indirizzo">
+                    <Input
+                      autoComplete="street-address"
+                      placeholder="Via, numero civico"
+                      value={settings.company.address}
+                      onChange={(event) =>
+                        updateCompany('address', event.target.value)
+                      }
+                    />
+                  </Field>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <Field label="Città">
+                      <Input
+                        autoComplete="address-level2"
+                        value={settings.company.city}
+                        onChange={(event) =>
+                          updateCompany('city', event.target.value)
+                        }
+                      />
+                    </Field>
+                    <Field label="CAP">
+                      <Input
+                        autoComplete="postal-code"
+                        inputMode="numeric"
+                        value={settings.company.postalCode}
+                        onChange={(event) =>
+                          updateCompany('postalCode', event.target.value)
+                        }
+                      />
+                    </Field>
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <Field label="Partita IVA (facoltativa)">
+                      <Input
+                        value={settings.company.vatNumber}
+                        onChange={(event) =>
+                          updateCompany('vatNumber', event.target.value)
+                        }
+                      />
+                    </Field>
+                    <Field label="Telefono (facoltativo)">
+                      <Input
+                        autoComplete="tel"
+                        inputMode="tel"
+                        value={settings.company.phone}
+                        onChange={(event) =>
+                          updateCompany('phone', event.target.value)
+                        }
+                      />
+                    </Field>
+                  </div>
+                  <Field label="Email aziendale (facoltativa)">
+                    <Input
+                      autoComplete="email"
+                      inputMode="email"
+                      type="email"
+                      value={settings.company.email}
+                      onChange={(event) =>
+                        updateCompany('email', event.target.value)
+                      }
+                    />
+                  </Field>
+                  <Field label="Note (facoltative)">
+                    <Textarea
+                      placeholder="Referente, sede, note utili…"
+                      value={settings.company.notes}
+                      onChange={(event) =>
+                        updateCompany('notes', event.target.value)
+                      }
+                    />
+                  </Field>
                 </CardContent>
               </Card>
             </aside>
@@ -3116,7 +3334,7 @@ export default function Home() {
               setSettingsTab(value as typeof settingsTab)
             }
           >
-            <TabsList className="grid h-auto w-full grid-cols-3 rounded-2xl bg-muted p-1">
+            <TabsList className="grid h-auto w-full grid-cols-2 rounded-2xl bg-muted p-1 sm:grid-cols-4">
               <TabsTrigger value="account" className="rounded-xl py-2">
                 Account
               </TabsTrigger>
@@ -3128,6 +3346,9 @@ export default function Home() {
               </TabsTrigger>
               <TabsTrigger value="temi" className="rounded-xl py-2">
                 Temi
+              </TabsTrigger>
+              <TabsTrigger value="sezioni" className="rounded-xl py-2">
+                Sezioni
               </TabsTrigger>
             </TabsList>
             <TabsContent value="account" className="mt-4">
@@ -3351,6 +3572,42 @@ export default function Home() {
                 </div>
               </div>
             </TabsContent>
+            <TabsContent value="sezioni" className="mt-4">
+              <div className="space-y-3">
+                <div>
+                  <p className="text-sm font-bold">Sezioni visibili</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Attiva solo gli strumenti che usi. La scelta viene salvata
+                    nel tuo account.
+                  </p>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {SECTION_OPTIONS.map(({ value, label, description, icon: Icon }) => (
+                    <div
+                      key={value}
+                      className="flex items-center gap-3 rounded-2xl border border-border bg-card p-3"
+                    >
+                      <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-teal/12 text-teal">
+                        <Icon className="size-5" />
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <strong className="block text-sm">{label}</strong>
+                        <span className="mt-0.5 block text-xs text-muted-foreground">
+                          {description}
+                        </span>
+                      </span>
+                      <Switch
+                        aria-label={`${settings.enabledSections[value] ? 'Disattiva' : 'Attiva'} sezione ${label}`}
+                        checked={settings.enabledSections[value]}
+                        onCheckedChange={(checked) =>
+                          toggleSection(value, checked)
+                        }
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </TabsContent>
           </Tabs>
           <DialogFooter>
             <Button
@@ -3368,7 +3625,10 @@ export default function Home() {
 
       <nav
         aria-label="Navigazione principale"
-        className="fixed inset-x-3 bottom-3 z-50 grid grid-cols-4 rounded-[1.4rem] bg-ink p-2 text-white shadow-2xl lg:hidden"
+        className="fixed inset-x-3 bottom-3 z-50 grid rounded-[1.4rem] bg-ink p-2 text-white shadow-2xl lg:hidden"
+        style={{
+          gridTemplateColumns: `repeat(${Math.max(navItems.length, 1)}, minmax(0, 1fr))`,
+        }}
       >
         {navItems.map(({ value, label, icon: Icon }) => (
           <button
@@ -3382,14 +3642,16 @@ export default function Home() {
           </button>
         ))}
       </nav>
-      <Button
-        aria-label="Aggiungi una nuova spesa"
-        onClick={() => setExpenseOpen(true)}
-        className="fixed bottom-20 right-5 z-40 size-14 rounded-full bg-lime text-ink shadow-xl hover:bg-lime/90 sm:hidden"
-        size="icon-lg"
-      >
-        <Plus className="size-6" />
-      </Button>
+      {settings.enabledSections.spese && (
+        <Button
+          aria-label="Aggiungi una nuova spesa"
+          onClick={() => setExpenseOpen(true)}
+          className="fixed bottom-20 right-5 z-40 size-14 rounded-full bg-lime text-ink shadow-xl hover:bg-lime/90 sm:hidden"
+          size="icon-lg"
+        >
+          <Plus className="size-6" />
+        </Button>
+      )}
     </main>
   );
 }
