@@ -1,0 +1,11 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // The app stores one organiser document per authenticated user.
+    match /users/{userId}/organiser/{documentId} {
+      allow read, write: if request.auth != null
+        && request.auth.uid == userId;
+    }
+  }
+}

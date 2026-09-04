@@ -30,13 +30,16 @@ import {
   WalletCards,
 } from 'lucide-react';
 import {
+  browserLocalPersistence,
   createUserWithEmailAndPassword,
   onAuthStateChanged,
   sendPasswordResetEmail,
+  setPersistence,
   signInWithEmailAndPassword,
   signOut,
   type User,
 } from 'firebase/auth';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
 import {
   Bar,
   BarChart,
@@ -69,7 +72,7 @@ import {
 } from '@/components/ui/native-select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
-import { firebaseAuth, firebaseConfigured } from '@/lib/firebase';
+import { firebaseAuth, firebaseConfigured, firebaseDb } from '@/lib/firebase';
 
 type Section = 'dashboard' | 'spese' | 'mezzi' | 'lavoro';
 type Vehicle = 'Macchina' | 'Moto' | 'Altro';
@@ -113,6 +116,14 @@ type Appearance = {
 type SavedTheme = Appearance & {
   id: string;
   name: string;
+};
+type AccountData = {
+  expenses: Expense[];
+  workEntries: WorkEntry[];
+  deadlines: Deadline[];
+  settings: Settings;
+  appearance: Appearance;
+  savedThemes: SavedTheme[];
 };
 type ToolRegistration = {
   name: string;
@@ -337,6 +348,34 @@ function authErrorMessage(error: unknown) {
   );
 }
 
+function parseAccountData(raw: unknown): Partial<AccountData> {
+  if (!raw || typeof raw !== 'object') return {};
+  const value = raw as Record<string, unknown>;
+  const data: Partial<AccountData> = {};
+  if (Array.isArray(value.expenses))
+    data.expenses = value.expenses as Expense[];
+  if (Array.isArray(value.workEntries))
+    data.workEntries = value.workEntries as WorkEntry[];
+  if (Array.isArray(value.deadlines))
+    data.deadlines = value.deadlines as Deadline[];
+  if (value.settings && typeof value.settings === 'object')
+    data.settings = value.settings as Settings;
+  if (value.appearance && typeof value.appearance === 'object')
+    data.appearance = value.appearance as Appearance;
+  if (Array.isArray(value.savedThemes))
+    data.savedThemes = value.savedThemes as SavedTheme[];
+  return data;
+}
+
+function readStoredAccountData(key: string) {
+  try {
+    const value = localStorage.getItem(key);
+    return value ? parseAccountData(JSON.parse(value)) : null;
+  } catch {
+    return null;
+  }
+}
+
 async function compressReceipt(file: File) {
   if (!file.type.startsWith('image/')) return '';
   const source = await new Promise<string>((resolve, reject) => {
@@ -381,6 +420,9 @@ export default function Home() {
   const [authPassword, setAuthPassword] = useState('');
   const [authBusy, setAuthBusy] = useState(false);
   const [authError, setAuthError] = useState('');
+  const [authLoading, setAuthLoading] = useState(true);
+  const [accountLoading, setAccountLoading] = useState(false);
+  const [accountError, setAccountError] = useState('');
   const [deadlineVehicle, setDeadlineVehicle] = useState<
     'Macchina' | 'Moto' | null
   >(null);
@@ -404,65 +446,166 @@ export default function Home() {
   });
 
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) {
-        const data = JSON.parse(saved) as Partial<{
-          expenses: Expense[];
-          workEntries: WorkEntry[];
-          deadlines: Deadline[];
-          settings: Settings;
-          appearance: Appearance;
-          savedThemes: SavedTheme[];
-        }>;
-        if (data.expenses) setExpenses(data.expenses);
-        if (data.workEntries) setWorkEntries(data.workEntries);
-        if (data.deadlines) setDeadlines(data.deadlines);
-        if (data.settings) setSettings(data.settings);
-        if (data.appearance) {
-          const mergedAppearance = { ...initialAppearance, ...data.appearance };
-          const hasLegacyDefaults =
-            data.appearance.brandColor?.toLowerCase() === '#142f2a' &&
-            data.appearance.accentColor?.toLowerCase() === '#d7df23' &&
-            data.appearance.highlightColor?.toLowerCase() === '#ff6b4a';
-          setAppearance(
-            hasLegacyDefaults
-              ? {
-                  ...mergedAppearance,
-                  brandColor: initialAppearance.brandColor,
-                  accentColor: initialAppearance.accentColor,
-                  highlightColor: initialAppearance.highlightColor,
-                }
-              : mergedAppearance,
-          );
-        }
-        if (Array.isArray(data.savedThemes)) setSavedThemes(data.savedThemes);
-      }
-    } catch {
-      setNotice('Non è stato possibile leggere i dati salvati.');
+    if (!firebaseAuth) {
+      setAuthLoading(false);
+      return undefined;
     }
-    setHydrated(true);
+    void setPersistence(firebaseAuth, browserLocalPersistence).catch(() => {
+      /* Firebase usa comunque la persistenza locale predefinita del browser. */
+    });
+    return onAuthStateChanged(firebaseAuth, (user) => {
+      setAuthUser(user);
+      setAuthLoading(false);
+      setAuthError('');
+      if (user) setAccountLoading(true);
+      if (!user) {
+        setAccountLoading(false);
+        setAccountError('');
+        setHydrated(false);
+        setExpenses(initialExpenses);
+        setWorkEntries(initialWork);
+        setDeadlines(initialDeadlines);
+        setSettings(initialSettings);
+        setAppearance(initialAppearance);
+        setSavedThemes([]);
+        setSelectedSavedThemeId('');
+      }
+    });
   }, []);
 
   useEffect(() => {
-    if (!hydrated) return;
+    if (!authUser) return undefined;
+    let active = true;
+    const accountKey = `${STORAGE_KEY}:${authUser.uid}`;
+    const accountRef = firebaseDb
+      ? doc(firebaseDb, 'users', authUser.uid, 'organiser', 'state')
+      : null;
+    const applyData = (data: Partial<AccountData>) => {
+      if (data.expenses) setExpenses(data.expenses);
+      if (data.workEntries) setWorkEntries(data.workEntries);
+      if (data.deadlines) setDeadlines(data.deadlines);
+      if (data.settings) setSettings({ ...initialSettings, ...data.settings });
+      if (data.appearance) {
+        const mergedAppearance = { ...initialAppearance, ...data.appearance };
+        const hasLegacyDefaults =
+          data.appearance.brandColor?.toLowerCase() === '#142f2a' &&
+          data.appearance.accentColor?.toLowerCase() === '#d7df23' &&
+          data.appearance.highlightColor?.toLowerCase() === '#ff6b4a';
+        setAppearance(
+          hasLegacyDefaults
+            ? {
+                ...mergedAppearance,
+                brandColor: initialAppearance.brandColor,
+                accentColor: initialAppearance.accentColor,
+                highlightColor: initialAppearance.highlightColor,
+              }
+            : mergedAppearance,
+        );
+      }
+      if (data.savedThemes) setSavedThemes(data.savedThemes);
+    };
+    const cachedData = readStoredAccountData(accountKey);
+    if (cachedData) applyData(cachedData);
+
+    const loadAccount = async () => {
+      setAccountLoading(true);
+      setAccountError('');
+      setHydrated(false);
+      try {
+        if (!firebaseDb || !accountRef) {
+          if (active) setAccountError('Archivio account non disponibile.');
+          return;
+        }
+        const snapshot = await getDoc(accountRef);
+        if (snapshot.exists()) {
+          if (active) applyData(parseAccountData(snapshot.data()));
+          return;
+        }
+
+        let firstAccountData = cachedData;
+        const migrationKey = `${STORAGE_KEY}:migrated-users`;
+        let migrationUsers: string[] = [];
+        try {
+          const migrationData = JSON.parse(
+            localStorage.getItem(migrationKey) ?? '{}',
+          ) as { users?: unknown };
+          if (Array.isArray(migrationData.users))
+            migrationUsers = migrationData.users.filter(
+              (value): value is string => typeof value === 'string',
+            );
+        } catch {
+          migrationUsers = [];
+        }
+        if (!firstAccountData && migrationUsers.length === 0) {
+          firstAccountData = readStoredAccountData(STORAGE_KEY);
+        }
+        if (active && firstAccountData) applyData(firstAccountData);
+        const initialData: AccountData = {
+          expenses: firstAccountData?.expenses ?? initialExpenses,
+          workEntries: firstAccountData?.workEntries ?? initialWork,
+          deadlines: firstAccountData?.deadlines ?? initialDeadlines,
+          settings: { ...initialSettings, ...firstAccountData?.settings },
+          appearance: { ...initialAppearance, ...firstAccountData?.appearance },
+          savedThemes: firstAccountData?.savedThemes ?? [],
+        };
+        await setDoc(accountRef, JSON.parse(JSON.stringify(initialData)));
+        if (migrationUsers.length === 0) {
+          localStorage.setItem(
+            migrationKey,
+            JSON.stringify({ users: [authUser.uid] }),
+          );
+        }
+      } catch {
+        if (active) {
+          setAccountError(
+            'Cloud Firestore non raggiungibile: uso la copia locale di questo account.',
+          );
+        }
+      } finally {
+        if (active) {
+          setHydrated(true);
+          setAccountLoading(false);
+        }
+      }
+    };
+    void loadAccount();
+    return () => {
+      active = false;
+    };
+  }, [authUser]);
+
+  useEffect(() => {
+    if (!hydrated || !authUser) return undefined;
+    const accountData: AccountData = {
+      expenses,
+      workEntries,
+      deadlines,
+      settings,
+      appearance,
+      savedThemes,
+    };
+    const serialized = JSON.stringify(accountData);
     try {
-      localStorage.setItem(
-        STORAGE_KEY,
-        JSON.stringify({
-          expenses,
-          workEntries,
-          deadlines,
-          settings,
-          appearance,
-          savedThemes,
-        }),
-      );
+      localStorage.setItem(`${STORAGE_KEY}:${authUser.uid}`, serialized);
     } catch {
       setNotice('Spazio locale esaurito: rimuovi alcune foto degli scontrini.');
     }
+    if (!firebaseDb) return undefined;
+    const db = firebaseDb;
+    const timer = window.setTimeout(() => {
+      void setDoc(
+        doc(db, 'users', authUser.uid, 'organiser', 'state'),
+        JSON.parse(serialized),
+      ).catch(() => {
+        setAccountError(
+          'Salvataggio cloud non riuscito: controlla le regole Firestore.',
+        );
+      });
+    }, 350);
+    return () => window.clearTimeout(timer);
   }, [
     appearance,
+    authUser,
     deadlines,
     expenses,
     hydrated,
@@ -909,6 +1052,11 @@ export default function Home() {
         ? 'Invia email di reset'
         : 'Accedi';
 
+  if (authLoading || (authUser && accountLoading)) {
+    return <AccountLoadingScreen />;
+  }
+  if (!authUser) return <AuthGate />;
+
   return (
     <main className="min-h-screen bg-background pb-24 text-foreground lg:pb-10">
       <header className="sticky top-0 z-40 border-b border-white/10 bg-ink/95 text-white backdrop-blur-xl">
@@ -1008,6 +1156,13 @@ export default function Home() {
           </div>
         </div>
       </header>
+
+      {accountError && (
+        <div className="mx-auto mt-4 flex w-[min(92vw,1120px)] items-center gap-3 rounded-2xl border border-amber-300/60 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-950 dark:bg-amber-950/30 dark:text-amber-100">
+          <LockKeyhole className="size-4 shrink-0" />
+          <span>{accountError}</span>
+        </div>
+      )}
 
       {notice && (
         <output className="fixed left-1/2 top-20 z-[70] flex w-[min(92vw,480px)] -translate-x-1/2 items-center justify-between gap-3 rounded-2xl bg-white p-3 pl-4 text-sm font-semibold text-ink shadow-2xl ring-1 ring-ink/10">
@@ -2184,6 +2339,255 @@ export default function Home() {
       >
         <Plus className="size-6" />
       </Button>
+    </main>
+  );
+}
+
+function AccountLoadingScreen() {
+  return (
+    <main className="grid min-h-screen place-items-center bg-background px-4 text-foreground">
+      <div className="flex items-center gap-3 rounded-2xl bg-card px-5 py-4 text-sm font-semibold shadow-lg ring-1 ring-ink/10">
+        <span className="size-3 animate-pulse rounded-full bg-teal" />
+        Caricamento del tuo spazio personale…
+      </div>
+    </main>
+  );
+}
+
+function AuthGate() {
+  const [mode, setMode] = useState<'login' | 'signup' | 'reset'>('login');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
+
+  const title =
+    mode === 'signup'
+      ? 'Crea il tuo account'
+      : mode === 'reset'
+        ? 'Reimposta password'
+        : 'Accedi a Crimi';
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError('');
+    setMessage('');
+    if (!firebaseConfigured || !firebaseAuth) {
+      setError(
+        'Firebase non è configurato. Completa i valori VITE_FIREBASE_* nella build.',
+      );
+      return;
+    }
+    const cleanEmail = email.trim();
+    if (!cleanEmail) {
+      setError('Inserisci il tuo indirizzo email.');
+      return;
+    }
+    if (mode !== 'reset' && password.length < 6) {
+      setError('La password deve contenere almeno 6 caratteri.');
+      return;
+    }
+    setBusy(true);
+    try {
+      if (mode === 'reset') {
+        await sendPasswordResetEmail(firebaseAuth, cleanEmail);
+        setMode('login');
+        setPassword('');
+        setMessage(
+          'Email di reset inviata. Controlla la tua casella di posta.',
+        );
+      } else if (mode === 'signup') {
+        await createUserWithEmailAndPassword(
+          firebaseAuth,
+          cleanEmail,
+          password,
+        );
+      } else {
+        await signInWithEmailAndPassword(firebaseAuth, cleanEmail, password);
+      }
+      setPassword('');
+    } catch (authError) {
+      setError(authErrorMessage(authError));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <main className="relative min-h-screen overflow-hidden bg-background px-4 py-8 text-foreground sm:px-6 lg:px-8">
+      <div className="pointer-events-none absolute -right-24 -top-24 size-72 rounded-full bg-teal/20 blur-3xl" />
+      <div className="pointer-events-none absolute -bottom-28 -left-20 size-80 rounded-full bg-lime/20 blur-3xl" />
+      <div className="relative mx-auto flex min-h-[calc(100vh-4rem)] w-full max-w-5xl flex-col justify-center gap-8 lg:grid lg:grid-cols-[1.05fr_.95fr] lg:items-center">
+        <section className="space-y-5 text-center lg:text-left">
+          <div className="flex items-center justify-center gap-3 lg:justify-start">
+            <span className="grid size-14 place-items-center rounded-[1.3rem] bg-ink text-lime shadow-[0_0_0_6px_rgba(33,161,121,.16)]">
+              <CircleGauge className="size-7" strokeWidth={2.3} />
+            </span>
+            <span className="text-left">
+              <span className="block text-xs font-black uppercase tracking-[.22em] text-teal">
+                Crimi
+              </span>
+              <span className="block font-heading text-2xl font-black tracking-[-.04em]">
+                Life Organiser
+              </span>
+            </span>
+          </div>
+          <div>
+            <p className="text-sm font-black uppercase tracking-[.18em] text-teal">
+              Il tuo spazio personale
+            </p>
+            <h1 className="mt-3 font-heading text-4xl font-black tracking-[-.06em] sm:text-6xl">
+              Tutto sotto controllo, account dopo account.
+            </h1>
+            <p className="mx-auto mt-4 max-w-xl text-muted-foreground lg:mx-0">
+              Accedi per ritrovare spese, ore, mezzi e preferenze anche quando
+              chiudi la pagina. Ogni account ha il suo spazio privato.
+            </p>
+          </div>
+        </section>
+
+        <Card className="mx-auto w-full max-w-md rounded-[2rem] border-0 p-2 shadow-[0_24px_80px_rgba(15,61,94,.18)] ring-1 ring-ink/10">
+          <CardContent className="rounded-[1.5rem] p-5 sm:p-7">
+            <div className="mb-6">
+              <div className="mb-4 grid size-11 place-items-center rounded-2xl bg-teal/15 text-teal">
+                <LockKeyhole className="size-5" />
+              </div>
+              <h2 className="font-heading text-2xl font-black">{title}</h2>
+              <p className="mt-2 text-sm text-muted-foreground">
+                {mode === 'reset'
+                  ? 'Riceverai un link per scegliere una nuova password.'
+                  : 'Usa email e password per entrare nel tuo spazio Crimi.'}
+              </p>
+            </div>
+            {!firebaseConfigured && (
+              <div className="mb-5 flex gap-3 rounded-2xl border border-amber-300/60 bg-amber-50 p-4 text-sm text-amber-950 dark:bg-amber-950/30 dark:text-amber-100">
+                <LockKeyhole className="mt-0.5 size-5 shrink-0" />
+                <p>
+                  Firebase non è ancora configurato. Inserisci i Secrets
+                  Firebase nella repository e rilancia la build Pages.
+                </p>
+              </div>
+            )}
+            <form className="grid gap-4" onSubmit={submit}>
+              <Field label="Email">
+                <Input
+                  required
+                  autoComplete="email"
+                  inputMode="email"
+                  placeholder="nome@esempio.it"
+                  type="email"
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                />
+              </Field>
+              {mode !== 'reset' && (
+                <Field label="Password">
+                  <Input
+                    required
+                    autoComplete={
+                      mode === 'signup' ? 'new-password' : 'current-password'
+                    }
+                    minLength={6}
+                    placeholder="Almeno 6 caratteri"
+                    type="password"
+                    value={password}
+                    onChange={(event) => setPassword(event.target.value)}
+                  />
+                </Field>
+              )}
+              {error && (
+                <p
+                  aria-live="polite"
+                  className="rounded-xl bg-coral/10 px-3 py-2 text-sm font-semibold text-coral"
+                  role="alert"
+                >
+                  {error}
+                </p>
+              )}
+              {message && (
+                <output
+                  aria-live="polite"
+                  className="rounded-xl bg-teal/10 px-3 py-2 text-sm font-semibold text-teal"
+                >
+                  {message}
+                </output>
+              )}
+              <Button
+                className="mt-1 h-11 w-full bg-ink text-white hover:bg-ink/90"
+                disabled={busy || !firebaseConfigured}
+                type="submit"
+              >
+                {busy
+                  ? 'Attendi…'
+                  : mode === 'signup'
+                    ? 'Crea account'
+                    : mode === 'reset'
+                      ? 'Invia email di reset'
+                      : 'Accedi'}
+              </Button>
+              {mode === 'login' && (
+                <Button
+                  className="w-full"
+                  onClick={() => {
+                    setMode('reset');
+                    setError('');
+                  }}
+                  type="button"
+                  variant="ghost"
+                >
+                  Hai dimenticato la password?
+                </Button>
+              )}
+            </form>
+            <div className="mt-5 border-t border-border pt-4 text-center text-sm text-muted-foreground">
+              {mode === 'signup' ? (
+                <>
+                  Hai già un account?{' '}
+                  <button
+                    className="font-bold text-ink underline-offset-4 hover:underline"
+                    onClick={() => {
+                      setMode('login');
+                      setError('');
+                    }}
+                    type="button"
+                  >
+                    Accedi
+                  </button>
+                </>
+              ) : mode === 'reset' ? (
+                <>
+                  Ricordi la password?{' '}
+                  <button
+                    className="font-bold text-ink underline-offset-4 hover:underline"
+                    onClick={() => {
+                      setMode('login');
+                      setError('');
+                    }}
+                    type="button"
+                  >
+                    Torna all’accesso
+                  </button>
+                </>
+              ) : (
+                <>
+                  Non hai un account?{' '}
+                  <button
+                    className="font-bold text-ink underline-offset-4 hover:underline"
+                    onClick={() => {
+                      setMode('signup');
+                      setError('');
+                    }}
+                    type="button"
+                  >
+                    Registrati
+                  </button>
+                </>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
     </main>
   );
 }

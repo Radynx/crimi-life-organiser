@@ -1,5 +1,6 @@
 import { getApp, getApps, initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
+import { getFirestore } from 'firebase/firestore';
 
 /**
  * Firebase client configuration is intentionally read from public build-time
@@ -33,6 +34,7 @@ export const firebaseApp = firebaseConfigured
   : null;
 
 export const firebaseAuth = firebaseApp ? getAuth(firebaseApp) : null;
+export const firebaseDb = firebaseApp ? getFirestore(firebaseApp) : null;
 
 if (firebaseAuth) {
   firebaseAuth.languageCode = 'it';

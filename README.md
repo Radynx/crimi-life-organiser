@@ -9,6 +9,7 @@ PWA responsive per gestire spese, scontrini, mezzi, scadenze, ore lavorate, paga
 - schede Macchina e Moto con costi e scadenze;
 - registro ore e calcolo in tempo reale di paga e buoni pasto;
 - accesso opzionale con Firebase Authentication (email/password, registrazione e reset password);
+- pagina di accesso obbligatoria e sincronizzazione dei dati per account tramite Cloud Firestore;
 - dati salvati localmente sul dispositivo;
 - manifest, Service Worker, uso offline e notifiche locali;
 - deployment automatico su GitHub Pages.
@@ -22,9 +23,9 @@ pnpm install
 pnpm dev
 ```
 
-## Collegamento Firebase Authentication
+## Collegamento Firebase Authentication e Firestore
 
-L'app include già il flusso completo di accesso, registrazione e reset password. Per abilitarlo devi collegare un tuo progetto Firebase (non inserire mai credenziali nel codice):
+L'app mostra la pagina di accesso prima della dashboard, mantiene la sessione anche dopo la chiusura del browser e salva spese, ore, scadenze, impostazioni e temi nel documento privato dell'account tramite Cloud Firestore. Per abilitarlo devi collegare un tuo progetto Firebase (non inserire mai credenziali nel codice):
 
 1. In [Firebase Console](https://console.firebase.google.com/) crea/seleziona un progetto e vai in **Authentication → Sign-in method**.
 2. Attiva il provider **Email/Password** e salva.
@@ -32,10 +33,11 @@ L'app include già il flusso completo di accesso, registrazione e reset password
 4. Per lo sviluppo locale copia `.env.example` in `.env.local` e compila le variabili `VITE_FIREBASE_*`.
 5. Per il sito pubblicato apri **GitHub → Settings → Secrets and variables → Actions** e crea questi repository secrets: `FIREBASE_API_KEY`, `FIREBASE_AUTH_DOMAIN`, `FIREBASE_PROJECT_ID`, `FIREBASE_STORAGE_BUCKET`, `FIREBASE_MESSAGING_SENDER_ID`, `FIREBASE_APP_ID`. Il workflow Pages li usa automaticamente durante la build.
 6. In **Authentication → Settings → Authorized domains** verifica/aggiungi `radynx.github.io` (e il tuo dominio personalizzato, se ne userai uno). `localhost` è già autorizzato per lo sviluppo.
+7. In **Firestore Database** crea un database (modalità produzione) e pubblica le regole contenute in [`firestore.rules`](./firestore.rules). In alternativa, copia quel contenuto nella scheda **Rules** della console e premi **Pubblica**. Le regole consentono a ogni utente di leggere e scrivere solo `users/{uid}/organiser/*` quando il suo UID coincide con quello autenticato.
 
 La configurazione Firebase Web viene inserita nel bundle statico perché identifica l'app, non è una password. Le regole di sicurezza restano nel progetto Firebase; limita comunque l'API key alle API e ai referrer necessari dalla Google Cloud Console.
 
-L'autenticazione non sincronizza ancora spese e ore tra dispositivi: questi dati restano nel `localStorage` del browser. Per la sincronizzazione multi-dispositivo serve aggiungere Firestore con regole basate su `request.auth.uid`.
+Quando un account viene usato per la prima volta, l'app crea automaticamente il suo documento Firestore. Se avevi dati nella versione precedente, vengono migrati una sola volta al primo account che accede su quel dispositivo; gli account successivi partono dal proprio spazio isolato.
 
 ## Note sulle notifiche
 
@@ -43,4 +45,4 @@ Il Service Worker gestisce notifiche locali e payload Web Push. L'invio di vere 
 
 ## Privacy
 
-Spese, scontrini, scadenze, ore e preferenze rimangono nel `localStorage` del browser. Se abiliti Firebase, email e stato di autenticazione vengono gestiti da Firebase Authentication secondo le impostazioni del tuo progetto; nessun dato finanziario viene inviato a Firebase in questa versione.
+Spese, scontrini, scadenze, ore, preferenze e temi vengono sincronizzati nel documento Firestore dell'account autenticato; una copia locale per account permette di ripartire anche con connessione temporaneamente assente. Email e stato di autenticazione vengono gestiti da Firebase Authentication secondo le impostazioni del tuo progetto.
