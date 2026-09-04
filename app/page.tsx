@@ -21,6 +21,7 @@ import {
   LogOut,
   Mail,
   MapPin,
+  Pencil,
   Plus,
   ReceiptText,
   Settings2,
@@ -59,6 +60,14 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -85,9 +94,34 @@ type Expense = {
   amount: number;
   date: string;
   vehicle?: Vehicle;
+  vehicleId?: string;
   vehicleNote?: string;
   items?: string;
   receipt?: string;
+};
+type MileageUpdate = {
+  id: string;
+  date: string;
+  km: number;
+  note?: string;
+};
+type VehicleRecord = {
+  id: string;
+  name: string;
+  type: Vehicle;
+  brand: string;
+  model: string;
+  plate: string;
+  serial: string;
+  fuel: string;
+  mileage: number;
+  mileageUpdatedAt: string;
+  mileageUpdates: MileageUpdate[];
+  insuranceType: string;
+  insuranceProvider: string;
+  insuranceCoverage: string;
+  insuranceExpiry: string;
+  notes: string;
 };
 type WorkEntry = {
   id: string;
@@ -98,7 +132,8 @@ type WorkEntry = {
 };
 type Deadline = {
   id: string;
-  vehicle: 'Macchina' | 'Moto';
+  vehicle: string;
+  vehicleId?: string;
   label: string;
   date: string;
 };
@@ -129,6 +164,7 @@ type AccountData = {
   expenses: Expense[];
   workEntries: WorkEntry[];
   deadlines: Deadline[];
+  vehicles: VehicleRecord[];
   settings: Settings;
   profile: Profile;
   appearance: Appearance;
@@ -191,6 +227,7 @@ const initialExpenses: Expense[] = [
     amount: 72,
     date: '2026-09-02',
     vehicle: 'Macchina',
+    vehicleId: 'vehicle-car',
   },
   {
     id: 'e3',
@@ -213,6 +250,7 @@ const initialExpenses: Expense[] = [
     amount: 145,
     date: '2026-08-24',
     vehicle: 'Moto',
+    vehicleId: 'vehicle-moto',
   },
   {
     id: 'e6',
@@ -247,11 +285,74 @@ const initialWork: WorkEntry[] = [
   },
 ];
 
+const initialVehicles: VehicleRecord[] = [
+  {
+    id: 'vehicle-car',
+    name: 'Macchina',
+    type: 'Macchina',
+    brand: '',
+    model: '',
+    plate: '',
+    serial: '',
+    fuel: 'Benzina',
+    mileage: 0,
+    mileageUpdatedAt: '',
+    mileageUpdates: [],
+    insuranceType: '',
+    insuranceProvider: '',
+    insuranceCoverage: '',
+    insuranceExpiry: '',
+    notes: '',
+  },
+  {
+    id: 'vehicle-moto',
+    name: 'Moto',
+    type: 'Moto',
+    brand: '',
+    model: '',
+    plate: '',
+    serial: '',
+    fuel: 'Benzina',
+    mileage: 0,
+    mileageUpdatedAt: '',
+    mileageUpdates: [],
+    insuranceType: '',
+    insuranceProvider: '',
+    insuranceCoverage: '',
+    insuranceExpiry: '',
+    notes: '',
+  },
+];
+
 const initialDeadlines: Deadline[] = [
-  { id: 'd1', vehicle: 'Macchina', label: 'Assicurazione', date: '2026-09-24' },
-  { id: 'd2', vehicle: 'Macchina', label: 'Revisione', date: '2027-02-18' },
-  { id: 'd3', vehicle: 'Moto', label: 'Bollo', date: '2026-10-10' },
-  { id: 'd4', vehicle: 'Moto', label: 'Tagliando', date: '2026-11-04' },
+  {
+    id: 'd1',
+    vehicle: 'Macchina',
+    vehicleId: 'vehicle-car',
+    label: 'Assicurazione',
+    date: '2026-09-24',
+  },
+  {
+    id: 'd2',
+    vehicle: 'Macchina',
+    vehicleId: 'vehicle-car',
+    label: 'Revisione',
+    date: '2027-02-18',
+  },
+  {
+    id: 'd3',
+    vehicle: 'Moto',
+    vehicleId: 'vehicle-moto',
+    label: 'Bollo',
+    date: '2026-10-10',
+  },
+  {
+    id: 'd4',
+    vehicle: 'Moto',
+    vehicleId: 'vehicle-moto',
+    label: 'Tagliando',
+    date: '2026-11-04',
+  },
 ];
 
 const initialSettings: Settings = {
@@ -374,6 +475,8 @@ function parseAccountData(raw: unknown): Partial<AccountData> {
     data.workEntries = value.workEntries as WorkEntry[];
   if (Array.isArray(value.deadlines))
     data.deadlines = value.deadlines as Deadline[];
+  if (Array.isArray(value.vehicles))
+    data.vehicles = value.vehicles as VehicleRecord[];
   if (value.settings && typeof value.settings === 'object')
     data.settings = value.settings as Settings;
   if (value.profile && typeof value.profile === 'object') {
@@ -432,6 +535,7 @@ export default function Home() {
   const [expenses, setExpenses] = useState<Expense[]>(initialExpenses);
   const [workEntries, setWorkEntries] = useState<WorkEntry[]>(initialWork);
   const [deadlines, setDeadlines] = useState<Deadline[]>(initialDeadlines);
+  const [vehicles, setVehicles] = useState<VehicleRecord[]>(initialVehicles);
   const [settings, setSettings] = useState<Settings>(initialSettings);
   const [profile, setProfile] = useState<Profile>(initialProfile);
   const [appearance, setAppearance] = useState<Appearance>(initialAppearance);
@@ -440,7 +544,12 @@ export default function Home() {
   const [selectedSavedThemeId, setSelectedSavedThemeId] = useState('');
   const [expenseOpen, setExpenseOpen] = useState(false);
   const [appearanceOpen, setAppearanceOpen] = useState(false);
+  const [settingsTab, setSettingsTab] = useState<
+    'account' | 'personalizza' | 'temi'
+  >('personalizza');
   const [accountOpen, setAccountOpen] = useState(false);
+  const [vehicleOpen, setVehicleOpen] = useState(false);
+  const [editingVehicleId, setEditingVehicleId] = useState<string | null>(null);
   const [authOpen, setAuthOpen] = useState(false);
   const [authMode, setAuthMode] = useState<'login' | 'signup' | 'reset'>(
     'login',
@@ -454,7 +563,7 @@ export default function Home() {
   const [accountLoading, setAccountLoading] = useState(false);
   const [accountError, setAccountError] = useState('');
   const [deadlineVehicle, setDeadlineVehicle] = useState<
-    'Macchina' | 'Moto' | null
+    VehicleRecord | null
   >(null);
   const [notice, setNotice] = useState('');
   const [hydrated, setHydrated] = useState(false);
@@ -464,6 +573,7 @@ export default function Home() {
     amount: '',
     date: '2026-09-03',
     vehicle: 'Macchina' as Vehicle,
+    vehicleId: 'vehicle-car',
     vehicleNote: '',
     items: '',
     receipt: '',
@@ -473,6 +583,23 @@ export default function Home() {
     start: '08:30',
     end: '17:30',
     breakMinutes: '60',
+  });
+  const [vehicleDraft, setVehicleDraft] = useState({
+    name: '',
+    type: 'Macchina' as Vehicle,
+    brand: '',
+    model: '',
+    plate: '',
+    serial: '',
+    fuel: 'Benzina',
+    mileage: '',
+    mileageDate: new Date().toISOString().slice(0, 10),
+    mileageNote: '',
+    insuranceType: '',
+    insuranceProvider: '',
+    insuranceCoverage: '',
+    insuranceExpiry: '',
+    notes: '',
   });
 
   useEffect(() => {
@@ -495,6 +622,7 @@ export default function Home() {
         setExpenses(initialExpenses);
         setWorkEntries(initialWork);
         setDeadlines(initialDeadlines);
+        setVehicles(initialVehicles);
         setSettings(initialSettings);
         setProfile(initialProfile);
         setAppearance(initialAppearance);
@@ -515,6 +643,17 @@ export default function Home() {
       if (data.expenses) setExpenses(data.expenses);
       if (data.workEntries) setWorkEntries(data.workEntries);
       if (data.deadlines) setDeadlines(data.deadlines);
+      if (data.vehicles)
+        setVehicles(
+          data.vehicles.map((vehicle) => ({
+            ...(initialVehicles.find((item) => item.id === vehicle.id) ??
+              initialVehicles[0]),
+            ...vehicle,
+            mileageUpdates: Array.isArray(vehicle.mileageUpdates)
+              ? vehicle.mileageUpdates
+              : [],
+          })),
+        );
       if (data.settings) setSettings({ ...initialSettings, ...data.settings });
       if (data.profile)
         setProfile({
@@ -581,6 +720,7 @@ export default function Home() {
           expenses: firstAccountData?.expenses ?? initialExpenses,
           workEntries: firstAccountData?.workEntries ?? initialWork,
           deadlines: firstAccountData?.deadlines ?? initialDeadlines,
+          vehicles: firstAccountData?.vehicles ?? initialVehicles,
           settings: { ...initialSettings, ...firstAccountData?.settings },
           profile: { ...initialProfile, ...firstAccountData?.profile },
           appearance: { ...initialAppearance, ...firstAccountData?.appearance },
@@ -622,6 +762,7 @@ export default function Home() {
       expenses,
       workEntries,
       deadlines,
+      vehicles,
       settings,
       profile,
       appearance,
@@ -655,6 +796,7 @@ export default function Home() {
     profile,
     savedThemes,
     settings,
+    vehicles,
     workEntries,
   ]);
 
@@ -827,6 +969,7 @@ export default function Home() {
                   type: 'string',
                   enum: ['Macchina', 'Moto', 'Altro'],
                 },
+                vehicleId: { type: 'string' },
                 items: { type: 'string' },
               },
               required: ['store', 'category', 'amount', 'date'],
@@ -852,6 +995,7 @@ export default function Home() {
                 amount: value.amount,
                 date: value.date!,
                 vehicle: value.vehicle,
+                vehicleId: value.vehicleId,
                 items: value.items?.trim(),
               });
               setNotice(`Spesa da ${euro.format(item.amount)} registrata.`);
@@ -954,6 +1098,7 @@ export default function Home() {
       amount,
       date: expenseDraft.date,
       vehicle: needsVehicle ? expenseDraft.vehicle : undefined,
+      vehicleId: needsVehicle ? expenseDraft.vehicleId || undefined : undefined,
       vehicleNote:
         needsVehicle && expenseDraft.vehicle === 'Altro'
           ? expenseDraft.vehicleNote.trim()
@@ -967,6 +1112,7 @@ export default function Home() {
       amount: '',
       date: expenseDraft.date,
       vehicle: 'Macchina',
+      vehicleId: 'vehicle-car',
       vehicleNote: '',
       items: '',
       receipt: '',
@@ -1044,9 +1190,9 @@ export default function Home() {
     }
   }
 
-  function updateProfile<K extends keyof Profile>(
-    field: K,
-    value: Profile[K],
+  function updateProfile(
+    field: keyof Profile,
+    value: Profile[keyof Profile],
   ) {
     setProfile((current) => ({ ...current, [field]: value }));
   }
@@ -1074,6 +1220,167 @@ export default function Home() {
         (_, item) => item !== index,
       ),
     }));
+  }
+
+  function saveProfile() {
+    const cleaned: Profile = {
+      ...profile,
+      username: profile.username.trim(),
+      homeAddress: profile.homeAddress.trim(),
+      additionalAddresses: profile.additionalAddresses
+        .map((address) => address.trim())
+        .filter(Boolean),
+    };
+    setProfile(cleaned);
+    setAppearanceOpen(false);
+    setNotice('Profilo account aggiornato.');
+  }
+
+  function openNewVehicle() {
+    setEditingVehicleId(null);
+    setVehicleDraft({
+      name: '',
+      type: 'Macchina',
+      brand: '',
+      model: '',
+      plate: '',
+      serial: '',
+      fuel: 'Benzina',
+      mileage: '',
+      mileageDate: new Date().toISOString().slice(0, 10),
+      mileageNote: '',
+      insuranceType: '',
+      insuranceProvider: '',
+      insuranceCoverage: '',
+      insuranceExpiry: '',
+      notes: '',
+    });
+    setVehicleOpen(true);
+  }
+
+  function openEditVehicle(vehicle: VehicleRecord) {
+    setEditingVehicleId(vehicle.id);
+    setVehicleDraft({
+      name: vehicle.name,
+      type: vehicle.type,
+      brand: vehicle.brand,
+      model: vehicle.model,
+      plate: vehicle.plate,
+      serial: vehicle.serial,
+      fuel: vehicle.fuel,
+      mileage: vehicle.mileage ? String(vehicle.mileage) : '',
+      mileageDate:
+        vehicle.mileageUpdatedAt || new Date().toISOString().slice(0, 10),
+      mileageNote: '',
+      insuranceType: vehicle.insuranceType,
+      insuranceProvider: vehicle.insuranceProvider,
+      insuranceCoverage: vehicle.insuranceCoverage,
+      insuranceExpiry: vehicle.insuranceExpiry,
+      notes: vehicle.notes,
+    });
+    setVehicleOpen(true);
+  }
+
+  function saveVehicle(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const name = vehicleDraft.name.trim();
+    if (!name) {
+      setNotice('Inserisci un nome per il mezzo.');
+      return;
+    }
+    const mileage = Math.max(0, Number(vehicleDraft.mileage) || 0);
+    const existing = editingVehicleId
+      ? vehicles.find((vehicle) => vehicle.id === editingVehicleId)
+      : undefined;
+    const mileageChanged =
+      existing && mileage !== existing.mileage && vehicleDraft.mileage !== '';
+    const mileageUpdate: MileageUpdate | null =
+      vehicleDraft.mileage !== '' &&
+      (!existing || mileageChanged || existing.mileageUpdates.length === 0)
+        ? {
+            id: uid('km'),
+            date: vehicleDraft.mileageDate,
+            km: mileage,
+            note: vehicleDraft.mileageNote.trim() || undefined,
+          }
+        : null;
+    const nextVehicle: VehicleRecord = {
+      id: existing?.id ?? uid('vehicle'),
+      name,
+      type: vehicleDraft.type,
+      brand: vehicleDraft.brand.trim(),
+      model: vehicleDraft.model.trim(),
+      plate: vehicleDraft.plate.trim().toUpperCase(),
+      serial: vehicleDraft.serial.trim(),
+      fuel: vehicleDraft.fuel.trim(),
+      mileage,
+      mileageUpdatedAt:
+        vehicleDraft.mileage !== ''
+          ? vehicleDraft.mileageDate
+          : existing?.mileageUpdatedAt ?? '',
+      mileageUpdates: mileageUpdate
+        ? [mileageUpdate, ...(existing?.mileageUpdates ?? [])]
+        : (existing?.mileageUpdates ?? []),
+      insuranceType: vehicleDraft.insuranceType.trim(),
+      insuranceProvider: vehicleDraft.insuranceProvider.trim(),
+      insuranceCoverage: vehicleDraft.insuranceCoverage.trim(),
+      insuranceExpiry: vehicleDraft.insuranceExpiry,
+      notes: vehicleDraft.notes.trim(),
+    };
+    setVehicles((current) =>
+      existing
+        ? current.map((vehicle) =>
+            vehicle.id === existing.id ? nextVehicle : vehicle,
+          )
+        : [nextVehicle, ...current],
+    );
+    if (nextVehicle.insuranceExpiry) {
+      setDeadlines((current) => {
+        const withoutInsurance = current.filter(
+          (item) =>
+            !(
+              item.vehicleId === nextVehicle.id &&
+              item.label === 'Assicurazione'
+            ),
+        );
+        return [
+          ...withoutInsurance,
+          {
+            id: uid('deadline'),
+            vehicle: nextVehicle.name,
+            vehicleId: nextVehicle.id,
+            label: 'Assicurazione',
+            date: nextVehicle.insuranceExpiry,
+          },
+        ];
+      });
+    } else if (existing) {
+      setDeadlines((current) =>
+        current.filter(
+          (item) =>
+            !(
+              item.vehicleId === nextVehicle.id &&
+              item.label === 'Assicurazione'
+            ),
+        ),
+      );
+    }
+    setVehicleOpen(false);
+    setEditingVehicleId(null);
+    setNotice(existing ? 'Mezzo aggiornato.' : 'Mezzo aggiunto.');
+  }
+
+  function deleteVehicle(vehicle: VehicleRecord) {
+    if (
+      !window.confirm(
+        `Eliminare “${vehicle.name}”? Le spese già registrate resteranno nel registro.`,
+      )
+    )
+      return;
+    setVehicles((current) =>
+      current.filter((item) => item.id !== vehicle.id),
+    );
+    setNotice(`Mezzo “${vehicle.name}” eliminato.`);
   }
 
   function saveTheme() {
@@ -1115,9 +1422,13 @@ export default function Home() {
     if (deleted) setNotice(`Tema “${deleted.name}” eliminato.`);
   }
 
-  const vehicleSpend = (vehicle: 'Macchina' | 'Moto') =>
+  const vehicleSpend = (vehicle: VehicleRecord) =>
     expenses
-      .filter((item) => item.vehicle === vehicle)
+      .filter(
+        (item) =>
+          item.vehicleId === vehicle.id ||
+          (!item.vehicleId && item.vehicle === vehicle.name),
+      )
       .reduce((sum, item) => sum + item.amount, 0);
   const navItems: {
     value: Section;
@@ -1197,28 +1508,40 @@ export default function Home() {
             </Button>
             {authUser ? (
               <>
-                <Button
-                  aria-label="Apri impostazioni account"
-                  onClick={() => setAccountOpen(true)}
-                  variant="ghost"
-                  className="h-10 max-w-52 rounded-2xl px-3 text-white hover:bg-white/10 hover:text-white"
-                >
-                  <UserRound className="size-4 shrink-0 text-lime" />
-                  <span className="hidden truncate text-xs font-semibold text-white/80 md:block">
-                    {profile.username || authUser.email}
-                  </span>
-                </Button>
-                <Button
-                  aria-label="Esci dall’account"
-                  onClick={() => {
-                    if (firebaseAuth) void signOut(firebaseAuth);
-                  }}
-                  variant="ghost"
-                  className="h-10 rounded-2xl px-3 text-white hover:bg-white/10 hover:text-white"
-                >
-                  <LogOut />
-                  <span className="hidden sm:inline">Esci</span>
-                </Button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger
+                    aria-label="Apri menu account"
+                    className="inline-flex h-10 max-w-52 items-center gap-2 rounded-2xl px-3 text-white transition hover:bg-white/10 focus-visible:ring-2 focus-visible:ring-lime"
+                  >
+                    <UserRound className="size-4 shrink-0 text-lime" />
+                    <span className="hidden truncate text-xs font-semibold text-white/80 md:block">
+                      {profile.username || authUser.email}
+                    </span>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent
+                    align="end"
+                    className="w-56 rounded-2xl bg-card p-2 text-foreground"
+                  >
+                    <DropdownMenuLabel className="px-3 py-2">
+                      {profile.username || 'Il mio account'}
+                    </DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      className="rounded-xl px-3 py-2.5"
+                      onClick={() => setAccountOpen(true)}
+                    >
+                      <Settings2 /> Impostazioni account
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      className="rounded-xl px-3 py-2.5 text-destructive focus:text-destructive"
+                      onClick={() => {
+                        if (firebaseAuth) void signOut(firebaseAuth);
+                      }}
+                    >
+                      <LogOut /> Esci
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </>
             ) : (
               <Button
@@ -1237,7 +1560,10 @@ export default function Home() {
             )}
             <Button
               aria-label="Apri impostazioni"
-              onClick={() => setAppearanceOpen(true)}
+              onClick={() => {
+                setSettingsTab('personalizza');
+                setAppearanceOpen(true);
+              }}
               variant="ghost"
               className="h-10 rounded-2xl px-3 text-white hover:bg-white/10 hover:text-white"
             >
@@ -1587,25 +1913,37 @@ export default function Home() {
           <PageHeading
             eyebrow="Garage Crimi"
             title="Macchina & moto"
-            description="Costi collegati e scadenze importanti, riuniti per ogni mezzo."
+            description="Dati del libretto, chilometraggio, assicurazione e scadenze di ogni mezzo."
             action={
-              <Button
-                onClick={requestNotifications}
-                className="h-11 rounded-2xl bg-lime px-4 font-bold text-ink hover:bg-lime/85"
-              >
-                <Bell /> Attiva avvisi
-              </Button>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  onClick={requestNotifications}
+                  className="h-11 rounded-2xl bg-lime px-4 font-bold text-ink hover:bg-lime/85"
+                >
+                  <Bell /> Attiva avvisi
+                </Button>
+                <Button
+                  onClick={openNewVehicle}
+                  className="h-11 rounded-2xl bg-teal px-4 font-bold text-white hover:bg-teal/90"
+                >
+                  <Plus /> Aggiungi mezzo
+                </Button>
+              </div>
             }
           />
           <div className="mt-6 grid gap-5 lg:grid-cols-2">
-            {(['Macchina', 'Moto'] as const).map((vehicle) => {
+            {vehicles.map((vehicle) => {
               const vehicleDeadlines = deadlines
-                .filter((item) => item.vehicle === vehicle)
+                .filter(
+                  (item) =>
+                    item.vehicleId === vehicle.id ||
+                    (!item.vehicleId && item.vehicle === vehicle.name),
+                )
                 .sort((a, b) => a.date.localeCompare(b.date));
-              const VehicleIcon = vehicle === 'Macchina' ? CarFront : Bike;
+              const VehicleIcon = vehicle.type === 'Moto' ? Bike : CarFront;
               return (
                 <Card
-                  key={vehicle}
+                  key={vehicle.id}
                   className="rounded-[2rem] border-0 shadow-sm ring-1 ring-ink/7"
                 >
                   <CardHeader className="bg-ink px-6 py-6 text-white">
@@ -1618,7 +1956,7 @@ export default function Home() {
                       </Badge>
                     </div>
                     <CardTitle className="mt-5 font-heading text-3xl font-black">
-                      {vehicle}
+                      {vehicle.name}
                     </CardTitle>
                     <p className="text-sm text-white/60">
                       Spese collegate:{' '}
@@ -1628,6 +1966,63 @@ export default function Home() {
                     </p>
                   </CardHeader>
                   <CardContent className="p-5">
+                    <div className="grid gap-2 text-sm sm:grid-cols-2">
+                      <VehicleMeta label="Marca / modello">
+                        {[vehicle.brand, vehicle.model].filter(Boolean).join(' ') || 'Da completare'}
+                      </VehicleMeta>
+                      <VehicleMeta label="Targa / seriale">
+                        {[vehicle.plate, vehicle.serial].filter(Boolean).join(' · ') || 'Da completare'}
+                      </VehicleMeta>
+                      <VehicleMeta label="Alimentazione">
+                        {vehicle.fuel || '—'}
+                      </VehicleMeta>
+                      <VehicleMeta label="Chilometraggio">
+                        {vehicle.mileage
+                          ? `${vehicle.mileage.toLocaleString('it-IT')} km`
+                          : 'Non ancora inserito'}
+                      </VehicleMeta>
+                    </div>
+                    {(vehicle.insuranceType ||
+                      vehicle.insuranceProvider ||
+                      vehicle.insuranceCoverage) && (
+                      <div className="mt-4 rounded-2xl bg-teal/10 p-3 text-sm">
+                        <p className="font-bold text-teal">Assicurazione</p>
+                        <p className="mt-1 text-muted-foreground">
+                          {[vehicle.insuranceType, vehicle.insuranceProvider]
+                            .filter(Boolean)
+                            .join(' · ') || 'Dati assicurazione'}
+                        </p>
+                        {vehicle.insuranceCoverage && (
+                          <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
+                            Copre: {vehicle.insuranceCoverage}
+                          </p>
+                        )}
+                      </div>
+                    )}
+                    {vehicle.mileageUpdates.length > 0 && (
+                      <div className="mt-4 rounded-2xl bg-muted p-3">
+                        <p className="text-xs font-black uppercase tracking-[.12em] text-muted-foreground">
+                          Ultimi aggiornamenti km
+                        </p>
+                        <div className="mt-2 space-y-1">
+                          {vehicle.mileageUpdates.slice(0, 2).map((update) => (
+                            <div
+                              key={update.id}
+                              className="flex items-center justify-between gap-2 text-sm"
+                            >
+                              <span>
+                                {shortDate.format(
+                                  new Date(`${update.date}T00:00:00`),
+                                )}
+                              </span>
+                              <strong>
+                                {update.km.toLocaleString('it-IT')} km
+                              </strong>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                     <h3 className="mb-3 text-xs font-black uppercase tracking-[.15em] text-muted-foreground">
                       Prossime scadenze
                     </h3>
@@ -1670,10 +2065,30 @@ export default function Home() {
                     >
                       <Settings2 /> Gestisci scadenze
                     </Button>
+                    <div className="mt-2 grid grid-cols-2 gap-2">
+                      <Button
+                        className="rounded-2xl bg-teal text-white hover:bg-teal/90"
+                        onClick={() => openEditVehicle(vehicle)}
+                        type="button"
+                      >
+                        <Pencil /> Modifica
+                      </Button>
+                      <Button
+                        className="rounded-2xl"
+                        onClick={() => deleteVehicle(vehicle)}
+                        type="button"
+                        variant="outline"
+                      >
+                        <Trash2 /> Elimina
+                      </Button>
+                    </div>
                   </CardContent>
                 </Card>
               );
             })}
+            {!vehicles.length && (
+              <EmptyState text="Aggiungi il tuo primo mezzo per iniziare." />
+            )}
           </div>
         </TabsContent>
 
@@ -1956,17 +2371,27 @@ export default function Home() {
                 <Field label="Destinazione">
                   <NativeSelect
                     className="w-full"
-                    value={expenseDraft.vehicle}
-                    onChange={(e) =>
+                    value={expenseDraft.vehicleId || expenseDraft.vehicle}
+                    onChange={(e) => {
+                      const selected = e.target.value;
+                      const linkedVehicle = vehicles.find(
+                        (vehicle) => vehicle.id === selected,
+                      );
                       setExpenseDraft({
                         ...expenseDraft,
-                        vehicle: e.target.value as Vehicle,
-                      })
-                    }
+                        vehicle: linkedVehicle?.type ?? 'Altro',
+                        vehicleId: linkedVehicle?.id ?? '',
+                      });
+                    }}
                   >
-                    <NativeSelectOption>Macchina</NativeSelectOption>
-                    <NativeSelectOption>Moto</NativeSelectOption>
-                    <NativeSelectOption>Altro</NativeSelectOption>
+                    {vehicles.map((vehicle) => (
+                      <NativeSelectOption key={vehicle.id} value={vehicle.id}>
+                        {vehicle.name}
+                      </NativeSelectOption>
+                    ))}
+                    <NativeSelectOption value="Altro">
+                      Altro / non in elenco
+                    </NativeSelectOption>
                   </NativeSelect>
                 </Field>
                 {expenseDraft.vehicle === 'Altro' && (
@@ -2035,13 +2460,270 @@ export default function Home() {
       </Dialog>
 
       <Dialog
+        open={vehicleOpen}
+        onOpenChange={(open) => {
+          setVehicleOpen(open);
+          if (!open) setEditingVehicleId(null);
+        }}
+      >
+        <DialogContent className="max-h-[92vh] overflow-y-auto rounded-[1.75rem] p-5 sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 font-heading text-2xl font-black">
+              {editingVehicleId ? <Pencil className="size-6 text-teal" /> : <Plus className="size-6 text-teal" />}
+              {editingVehicleId ? 'Modifica mezzo' : 'Aggiungi mezzo'}
+            </DialogTitle>
+            <DialogDescription>
+              Inserisci i dati principali del libretto e tieni aggiornati km e
+              assicurazione.
+            </DialogDescription>
+          </DialogHeader>
+          <form className="grid gap-5" onSubmit={saveVehicle}>
+            <div className="rounded-2xl bg-muted/60 p-4">
+              <p className="mb-4 text-sm font-bold">Dati del veicolo</p>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label="Nome del mezzo">
+                  <Input
+                    required
+                    placeholder="Es. Panda di famiglia"
+                    value={vehicleDraft.name}
+                    onChange={(event) =>
+                      setVehicleDraft({
+                        ...vehicleDraft,
+                        name: event.target.value,
+                      })
+                    }
+                  />
+                </Field>
+                <Field label="Tipo">
+                  <NativeSelect
+                    className="w-full"
+                    value={vehicleDraft.type}
+                    onChange={(event) =>
+                      setVehicleDraft({
+                        ...vehicleDraft,
+                        type: event.target.value as Vehicle,
+                      })
+                    }
+                  >
+                    <NativeSelectOption value="Macchina">Macchina</NativeSelectOption>
+                    <NativeSelectOption value="Moto">Moto</NativeSelectOption>
+                    <NativeSelectOption value="Altro">Altro</NativeSelectOption>
+                  </NativeSelect>
+                </Field>
+                <Field label="Marca">
+                  <Input
+                    autoComplete="off"
+                    placeholder="Es. Fiat"
+                    value={vehicleDraft.brand}
+                    onChange={(event) =>
+                      setVehicleDraft({
+                        ...vehicleDraft,
+                        brand: event.target.value,
+                      })
+                    }
+                  />
+                </Field>
+                <Field label="Modello">
+                  <Input
+                    autoComplete="off"
+                    placeholder="Es. Panda 1.2"
+                    value={vehicleDraft.model}
+                    onChange={(event) =>
+                      setVehicleDraft({
+                        ...vehicleDraft,
+                        model: event.target.value,
+                      })
+                    }
+                  />
+                </Field>
+                <Field label="Targa">
+                  <Input
+                    autoComplete="off"
+                    placeholder="Es. AB123CD"
+                    value={vehicleDraft.plate}
+                    onChange={(event) =>
+                      setVehicleDraft({
+                        ...vehicleDraft,
+                        plate: event.target.value,
+                      })
+                    }
+                  />
+                </Field>
+                <Field label="Numero di telaio / seriale">
+                  <Input
+                    autoComplete="off"
+                    placeholder="Numero riportato sul libretto"
+                    value={vehicleDraft.serial}
+                    onChange={(event) =>
+                      setVehicleDraft({
+                        ...vehicleDraft,
+                        serial: event.target.value,
+                      })
+                    }
+                  />
+                </Field>
+                <Field label="Alimentazione">
+                  <NativeSelect
+                    className="w-full"
+                    value={vehicleDraft.fuel}
+                    onChange={(event) =>
+                      setVehicleDraft({
+                        ...vehicleDraft,
+                        fuel: event.target.value,
+                      })
+                    }
+                  >
+                    {['Benzina', 'Diesel / gasolio', 'Elettrica', 'Ibrida', 'GPL', 'Metano', 'Altro'].map(
+                      (fuel) => (
+                        <NativeSelectOption key={fuel} value={fuel}>
+                          {fuel}
+                        </NativeSelectOption>
+                      ),
+                    )}
+                  </NativeSelect>
+                </Field>
+              </div>
+            </div>
+
+            <div className="rounded-2xl bg-muted/60 p-4">
+              <p className="mb-4 text-sm font-bold">Chilometraggio</p>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label="Km attuali">
+                  <Input
+                    inputMode="numeric"
+                    min="0"
+                    placeholder="Es. 85400"
+                    type="number"
+                    value={vehicleDraft.mileage}
+                    onChange={(event) =>
+                      setVehicleDraft({
+                        ...vehicleDraft,
+                        mileage: event.target.value,
+                      })
+                    }
+                  />
+                </Field>
+                <Field label="Data aggiornamento km">
+                  <Input
+                    type="date"
+                    value={vehicleDraft.mileageDate}
+                    onChange={(event) =>
+                      setVehicleDraft({
+                        ...vehicleDraft,
+                        mileageDate: event.target.value,
+                      })
+                    }
+                  />
+                </Field>
+                <div className="sm:col-span-2">
+                  <Field label="Nota aggiornamento (facoltativa)">
+                    <Input
+                      placeholder="Es. Tagliando annuale"
+                      value={vehicleDraft.mileageNote}
+                      onChange={(event) =>
+                        setVehicleDraft({
+                          ...vehicleDraft,
+                          mileageNote: event.target.value,
+                        })
+                      }
+                    />
+                  </Field>
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-2xl bg-teal/10 p-4">
+              <p className="mb-4 text-sm font-bold text-teal">Assicurazione</p>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label="Tipo di assicurazione">
+                  <Input
+                    placeholder="Es. RCA, furto e incendio"
+                    value={vehicleDraft.insuranceType}
+                    onChange={(event) =>
+                      setVehicleDraft({
+                        ...vehicleDraft,
+                        insuranceType: event.target.value,
+                      })
+                    }
+                  />
+                </Field>
+                <Field label="Compagnia assicurativa">
+                  <Input
+                    placeholder="Es. Allianz"
+                    value={vehicleDraft.insuranceProvider}
+                    onChange={(event) =>
+                      setVehicleDraft({
+                        ...vehicleDraft,
+                        insuranceProvider: event.target.value,
+                      })
+                    }
+                  />
+                </Field>
+                <Field label="Scadenza assicurazione">
+                  <Input
+                    type="date"
+                    value={vehicleDraft.insuranceExpiry}
+                    onChange={(event) =>
+                      setVehicleDraft({
+                        ...vehicleDraft,
+                        insuranceExpiry: event.target.value,
+                      })
+                    }
+                  />
+                </Field>
+                <div className="sm:col-span-2">
+                  <Field label="Cosa copre / garanzie">
+                    <Textarea
+                      placeholder="Es. Responsabilità civile, cristalli, assistenza stradale…"
+                      value={vehicleDraft.insuranceCoverage}
+                      onChange={(event) =>
+                        setVehicleDraft({
+                          ...vehicleDraft,
+                          insuranceCoverage: event.target.value,
+                        })
+                      }
+                    />
+                  </Field>
+                </div>
+              </div>
+            </div>
+
+            <Field label="Note aggiuntive (facoltative)">
+              <Textarea
+                placeholder="Annotazioni sul mezzo, accessori o documenti…"
+                value={vehicleDraft.notes}
+                onChange={(event) =>
+                  setVehicleDraft({ ...vehicleDraft, notes: event.target.value })
+                }
+              />
+            </Field>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setVehicleOpen(false)}
+              >
+                Annulla
+              </Button>
+              <Button
+                className="bg-teal font-bold text-white hover:bg-teal/90"
+                type="submit"
+              >
+                <Check /> Salva mezzo
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
         open={Boolean(deadlineVehicle)}
         onOpenChange={(open) => !open && setDeadlineVehicle(null)}
       >
         <DialogContent className="rounded-[1.75rem] sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="font-heading text-2xl font-black">
-              Scadenze {deadlineVehicle}
+              Scadenze {deadlineVehicle?.name}
             </DialogTitle>
             <DialogDescription>
               Le date vengono salvate sul dispositivo e usate per gli avvisi.
@@ -2053,7 +2735,10 @@ export default function Home() {
                 (label) => {
                   const current = deadlines.find(
                     (item) =>
-                      item.vehicle === deadlineVehicle && item.label === label,
+                      (item.vehicleId === deadlineVehicle.id ||
+                        (!item.vehicleId &&
+                          item.vehicle === deadlineVehicle.name)) &&
+                      item.label === label,
                   );
                   return (
                     <Field key={label} label={label}>
@@ -2066,7 +2751,9 @@ export default function Home() {
                             const without = all.filter(
                               (item) =>
                                 !(
-                                  item.vehicle === deadlineVehicle &&
+                                  (item.vehicleId === deadlineVehicle.id ||
+                                    (!item.vehicleId &&
+                                      item.vehicle === deadlineVehicle.name)) &&
                                   item.label === label
                                 ),
                             );
@@ -2075,7 +2762,8 @@ export default function Home() {
                                   ...without,
                                   {
                                     id: current?.id ?? uid('deadline'),
-                                    vehicle: deadlineVehicle,
+                                    vehicle: deadlineVehicle.name,
+                                    vehicleId: deadlineVehicle.id,
                                     label,
                                     date,
                                   },
@@ -2387,6 +3075,7 @@ export default function Home() {
           </div>
           <DialogFooter>
             <Button
+              className="bg-teal font-bold text-white hover:bg-teal/90"
               onClick={() => {
                 const cleaned: Profile = {
                   ...profile,
@@ -2411,14 +3100,46 @@ export default function Home() {
         <DialogContent className="max-h-[92vh] overflow-y-auto rounded-[1.75rem] p-5 sm:max-w-xl">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 font-heading text-2xl font-black">
-              <Settings2 className="size-6 text-teal" /> Personalizza app
+              <Settings2 className="size-6 text-teal" /> Impostazioni
             </DialogTitle>
             <DialogDescription>
-              Le preferenze vengono salvate su questo dispositivo e applicate
-              subito a tutta l’interfaccia.
+              Account, personalizzazione e temi riuniti in un unico spazio.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-6">
+          <Tabs
+            className="mt-2"
+            value={settingsTab}
+            onValueChange={(value) =>
+              setSettingsTab(value as typeof settingsTab)
+            }
+          >
+            <TabsList className="grid h-auto w-full grid-cols-3 rounded-2xl bg-muted p-1">
+              <TabsTrigger value="account" className="rounded-xl py-2">
+                Account
+              </TabsTrigger>
+              <TabsTrigger
+                value="personalizza"
+                className="rounded-xl py-2"
+              >
+                Personalizza
+              </TabsTrigger>
+              <TabsTrigger value="temi" className="rounded-xl py-2">
+                Temi
+              </TabsTrigger>
+            </TabsList>
+            <TabsContent value="account" className="mt-4">
+              <AccountSettingsPanel
+                authUser={authUser}
+                onAddAddress={addAddress}
+                onProfileChange={updateProfile}
+                onRemoveAddress={removeAddress}
+                onResetPassword={() => void sendAccountPasswordReset()}
+                onUpdateAddress={updateAddress}
+                profile={profile}
+              />
+            </TabsContent>
+            <TabsContent value="personalizza" className="mt-4">
+              <div className="space-y-6">
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label="Aspetto">
                 <NativeSelect
@@ -2569,9 +3290,75 @@ export default function Home() {
                 </span>
               </span>
             </div>
-          </div>
+              </div>
+            </TabsContent>
+            <TabsContent value="temi" className="mt-4">
+              <div className="space-y-3 rounded-2xl bg-muted/60 p-4">
+                <div>
+                  <p className="text-sm font-bold">Temi salvati</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Riapplica o elimina le combinazioni di colori, font e
+                    modalità che hai salvato.
+                  </p>
+                </div>
+                <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+                  <NativeSelect
+                    aria-label="Scegli un tema salvato"
+                    className="w-full"
+                    disabled={!savedThemes.length}
+                    value={selectedSavedThemeId}
+                    onChange={(event) => applySavedTheme(event.target.value)}
+                  >
+                    <NativeSelectOption value="">
+                      {savedThemes.length
+                        ? 'Scegli un tema salvato'
+                        : 'Nessun tema salvato'}
+                    </NativeSelectOption>
+                    {savedThemes.map((theme) => (
+                      <NativeSelectOption key={theme.id} value={theme.id}>
+                        {theme.name}
+                      </NativeSelectOption>
+                    ))}
+                  </NativeSelect>
+                  <Button
+                    aria-label="Elimina tema selezionato"
+                    className="sm:w-auto"
+                    disabled={!selectedSavedThemeId}
+                    onClick={deleteSelectedTheme}
+                    type="button"
+                    variant="outline"
+                  >
+                    <Trash2 /> <span>Elimina</span>
+                  </Button>
+                </div>
+                <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+                  <Input
+                    aria-label="Nome del nuovo tema"
+                    placeholder="Nome del nuovo tema"
+                    value={savedThemeName}
+                    onChange={(event) => setSavedThemeName(event.target.value)}
+                  />
+                  <Button
+                    className="bg-teal text-white hover:bg-teal/90 sm:w-auto"
+                    onClick={saveTheme}
+                    type="button"
+                  >
+                    <Check /> Salva tema
+                  </Button>
+                </div>
+              </div>
+            </TabsContent>
+          </Tabs>
           <DialogFooter>
-            <Button onClick={() => setAppearanceOpen(false)}>Fatto</Button>
+            <Button
+              className="bg-teal font-bold text-white hover:bg-teal/90"
+              onClick={() => {
+                if (settingsTab === 'account') saveProfile();
+                else setAppearanceOpen(false);
+              }}
+            >
+              {settingsTab === 'account' ? 'Salva profilo' : 'Fatto'}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -2907,6 +3694,155 @@ function AuthGate() {
   );
 }
 
+function AccountSettingsPanel({
+  authUser,
+  profile,
+  onProfileChange,
+  onAddAddress,
+  onUpdateAddress,
+  onRemoveAddress,
+  onResetPassword,
+}: {
+  authUser: User;
+  profile: Profile;
+  onProfileChange: (
+    field: keyof Profile,
+    value: Profile[keyof Profile],
+  ) => void;
+  onAddAddress: () => void;
+  onUpdateAddress: (index: number, value: string) => void;
+  onRemoveAddress: (index: number) => void;
+  onResetPassword: () => void;
+}) {
+  return (
+    <div className="space-y-5">
+      <div className="rounded-2xl bg-muted/60 p-4">
+        <div className="mb-4 flex items-center gap-3">
+          <span className="grid size-10 place-items-center rounded-xl bg-teal text-white">
+            <ShieldCheck className="size-5" />
+          </span>
+          <div className="min-w-0">
+            <p className="text-sm font-bold">Account autenticato</p>
+            <p className="truncate text-sm text-muted-foreground">
+              {authUser.email}
+            </p>
+          </div>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Nome utente">
+            <Input
+              autoComplete="nickname"
+              placeholder="Come vuoi essere chiamato?"
+              value={profile.username}
+              onChange={(event) =>
+                onProfileChange('username', event.target.value)
+              }
+            />
+          </Field>
+          <Field label="Data di nascita">
+            <Input
+              autoComplete="bday"
+              type="date"
+              value={profile.birthDate}
+              onChange={(event) =>
+                onProfileChange('birthDate', event.target.value)
+              }
+            />
+          </Field>
+        </div>
+        <div className="mt-4">
+          <Field label="Indirizzo di casa">
+            <div className="relative">
+              <MapPin className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                autoComplete="street-address"
+                className="pl-9"
+                placeholder="Via, numero, città"
+                value={profile.homeAddress}
+                onChange={(event) =>
+                  onProfileChange('homeAddress', event.target.value)
+                }
+              />
+            </div>
+          </Field>
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-border p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-sm font-bold">Altri indirizzi</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Salva lavoro, famiglia o altri luoghi utili.
+            </p>
+          </div>
+          <Button
+            className="shrink-0 rounded-xl"
+            onClick={onAddAddress}
+            size="sm"
+            type="button"
+            variant="outline"
+          >
+            <Plus /> Aggiungi
+          </Button>
+        </div>
+        <div className="mt-4 space-y-2">
+          {profile.additionalAddresses.length ? (
+            profile.additionalAddresses.map((address, index) => (
+              <div key={`address-${index}`} className="flex gap-2">
+                <div className="relative min-w-0 flex-1">
+                  <MapPin className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    aria-label={`Altro indirizzo ${index + 1}`}
+                    autoComplete="street-address"
+                    className="pl-9"
+                    placeholder={`Indirizzo ${index + 1}`}
+                    value={address}
+                    onChange={(event) =>
+                      onUpdateAddress(index, event.target.value)
+                    }
+                  />
+                </div>
+                <Button
+                  aria-label={`Rimuovi indirizzo ${index + 1}`}
+                  className="shrink-0"
+                  onClick={() => onRemoveAddress(index)}
+                  size="icon"
+                  type="button"
+                  variant="ghost"
+                >
+                  <Trash2 />
+                </Button>
+              </div>
+            ))
+          ) : (
+            <p className="rounded-xl bg-muted px-3 py-3 text-sm text-muted-foreground">
+              Nessun indirizzo aggiuntivo.
+            </p>
+          )}
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-3 rounded-2xl bg-ink p-4 text-white sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="text-sm font-bold">Password</p>
+          <p className="mt-1 text-xs text-white/60">
+            Ricevi un link sicuro per scegliere una nuova password.
+          </p>
+        </div>
+        <Button
+          className="shrink-0 rounded-xl bg-white text-ink hover:bg-white/90"
+          onClick={onResetPassword}
+          type="button"
+          variant="secondary"
+        >
+          <Mail /> Invia reset
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function Metric({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-2xl bg-white/8 p-4 backdrop-blur">
@@ -2994,6 +3930,24 @@ function QuickCard({
     </button>
   );
 }
+
+function VehicleMeta({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="min-w-0 rounded-xl bg-muted px-3 py-2">
+      <span className="block text-[0.65rem] font-black uppercase tracking-[.1em] text-muted-foreground">
+        {label}
+      </span>
+      <strong className="mt-1 block truncate text-sm">{children}</strong>
+    </div>
+  );
+}
+
 function SummaryCard({
   icon: Icon,
   label,
