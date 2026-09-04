@@ -79,6 +79,7 @@ import { Switch } from '@/components/ui/switch';
 import { firebaseAuth, firebaseConfigured, firebaseDb } from '@/lib/firebase';
 
 type Section = 'dashboard' | 'spese' | 'mezzi' | 'lavoro';
+type WorkPeriod = 'day' | 'month' | 'year';
 type Vehicle = 'Macchina' | 'Moto' | 'Altro';
 type Expense = {
   id: string;
@@ -493,6 +494,17 @@ function hoursFor(entry: WorkEntry) {
   return Math.max(0, (minutes - entry.breakMinutes) / 60);
 }
 
+function mealDaysFor(entries: WorkEntry[], minimumHours: number) {
+  const daily = entries.reduce<Record<string, number>>(
+    (acc, item) => ({
+      ...acc,
+      [item.date]: (acc[item.date] ?? 0) + hoursFor(item),
+    }),
+    {},
+  );
+  return Object.values(daily).filter((hours) => hours >= minimumHours).length;
+}
+
 function daysUntil(date: string) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -664,6 +676,8 @@ export default function Home() {
   >('personalizza');
   const [accountOpen, setAccountOpen] = useState(false);
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const [workPeriod, setWorkPeriod] = useState<WorkPeriod>('month');
+  const [workReferenceDate, setWorkReferenceDate] = useState('2026-09-03');
   const [vehicleOpen, setVehicleOpen] = useState(false);
   const [editingVehicleId, setEditingVehicleId] = useState<string | null>(null);
   const [authOpen, setAuthOpen] = useState(false);
@@ -1066,14 +1080,6 @@ export default function Home() {
   }, [section, settings.enabledSections]);
 
   const month = currentMonthKey();
-  const monthName = useMemo(
-    () =>
-      new Intl.DateTimeFormat('it-IT', {
-        month: 'long',
-        year: 'numeric',
-      }).format(new Date(`${month}-01T00:00:00`)),
-    [month],
-  );
   const monthExpenses = useMemo(
     () => expenses.filter((item) => item.date.startsWith(month)),
     [expenses, month],
@@ -1090,25 +1096,92 @@ export default function Home() {
     () => monthWork.reduce((sum, item) => sum + hoursFor(item), 0),
     [monthWork],
   );
-  const mealCount = useMemo(() => {
-    const daily = monthWork.reduce<Record<string, number>>(
-      (acc, item) => ({
-        ...acc,
-        [item.date]: (acc[item.date] ?? 0) + hoursFor(item),
-      }),
-      {},
-    );
-    return Object.values(daily).filter(
-      (hours) => hours >= settings.mealMinHours,
-    ).length;
-  }, [monthWork, settings.mealMinHours]);
   const wage = totalHours * settings.hourlyRate;
-  const benefits = mealCount * settings.mealValue;
   const bankTotal = useMemo(
     () => bankAccounts.reduce((sum, account) => sum + account.balance, 0),
     [bankAccounts],
   );
   const availableBalance = bankTotal;
+
+  const workPeriodEntries = useMemo(() => {
+    if (workPeriod === 'day') {
+      return workEntries.filter((item) => item.date === workReferenceDate);
+    }
+    const prefix =
+      workPeriod === 'month'
+        ? workReferenceDate.slice(0, 7)
+        : workReferenceDate.slice(0, 4);
+    return workEntries.filter((item) => item.date.startsWith(prefix));
+  }, [workEntries, workPeriod, workReferenceDate]);
+  const workPeriodHours = useMemo(
+    () => workPeriodEntries.reduce((sum, item) => sum + hoursFor(item), 0),
+    [workPeriodEntries],
+  );
+  const workPeriodMealCount = useMemo(
+    () => mealDaysFor(workPeriodEntries, settings.mealMinHours),
+    [settings.mealMinHours, workPeriodEntries],
+  );
+  const workPeriodWage = workPeriodHours * settings.hourlyRate;
+  const workPeriodBenefits = workPeriodMealCount * settings.mealValue;
+  const workPeriodLabel = useMemo(() => {
+    if (workPeriod === 'day') {
+      return shortDate.format(new Date(`${workReferenceDate}T00:00:00`));
+    }
+    if (workPeriod === 'month') {
+      return new Intl.DateTimeFormat('it-IT', {
+        month: 'long',
+        year: 'numeric',
+      }).format(
+        new Date(`${workReferenceDate.slice(0, 7)}-01T00:00:00`),
+      );
+    }
+    return `Anno ${workReferenceDate.slice(0, 4)}`;
+  }, [workPeriod, workReferenceDate]);
+  const workChartData = useMemo(() => {
+    if (workPeriod === 'day') {
+      return workPeriodEntries.map((item) => {
+        const hours = hoursFor(item);
+        return {
+          name: `${item.start}–${item.end}`,
+          hours,
+          earnings: hours * settings.hourlyRate,
+        };
+      });
+    }
+
+    if (workPeriod === 'month') {
+      const grouped = workPeriodEntries.reduce<Record<string, number>>(
+        (acc, item) => ({
+          ...acc,
+          [item.date]: (acc[item.date] ?? 0) + hoursFor(item),
+        }),
+        {},
+      );
+      return Object.entries(grouped)
+        .sort(([first], [second]) => first.localeCompare(second))
+        .map(([date, hours]) => ({
+          name: date.slice(-2),
+          hours,
+          earnings: hours * settings.hourlyRate,
+        }));
+    }
+
+    const year = workReferenceDate.slice(0, 4);
+    const monthFormatter = new Intl.DateTimeFormat('it-IT', {
+      month: 'short',
+    });
+    return Array.from({ length: 12 }, (_, index) => {
+      const key = `${year}-${String(index + 1).padStart(2, '0')}`;
+      const hours = workPeriodEntries
+        .filter((item) => item.date.startsWith(key))
+        .reduce((sum, item) => sum + hoursFor(item), 0);
+      return {
+        name: monthFormatter.format(new Date(`${key}-01T00:00:00`)),
+        hours,
+        earnings: hours * settings.hourlyRate,
+      };
+    });
+  }, [settings.hourlyRate, workPeriod, workPeriodEntries, workReferenceDate]);
 
   const categoryData = useMemo(() => {
     const grouped = monthExpenses.reduce<Record<string, number>>(
@@ -2040,18 +2113,13 @@ export default function Home() {
               <Card className="rounded-[1.75rem] border-0 bg-card shadow-sm ring-1 ring-ink/7">
                 <CardHeader className="px-5 pt-5">
                   <CardTitle className="font-heading text-xl font-extrabold tracking-tight">
-                    Entrate vs uscite
+                    Uscite del mese
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="h-[220px] px-3 pb-4">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart
                       data={[
-                        {
-                          name: 'Entrate teoriche',
-                          value: wage,
-                          fill: appearance.brandColor,
-                        },
                         {
                           name: 'Uscite',
                           value: monthExpenseTotal,
@@ -2091,7 +2159,11 @@ export default function Home() {
                           boxShadow: '0 12px 30px rgba(20,47,42,.12)',
                         }}
                       />
-                      <Bar dataKey="value" radius={[14, 14, 4, 4]} />
+                      <Bar
+                        dataKey="value"
+                        fill={appearance.highlightColor}
+                        radius={[14, 14, 4, 4]}
+                      />
                     </BarChart>
                   </ResponsiveContainer>
                 </CardContent>
@@ -2528,8 +2600,14 @@ export default function Home() {
               <div className="grid gap-3 sm:grid-cols-3">
                 <SummaryCard
                   icon={Clock3}
-                  label="Ore del mese"
-                  value={totalHours.toLocaleString('it-IT', {
+                  label={
+                    workPeriod === 'day'
+                      ? 'Ore del giorno'
+                      : workPeriod === 'year'
+                        ? "Ore dell'anno"
+                        : 'Ore del mese'
+                  }
+                  value={workPeriodHours.toLocaleString('it-IT', {
                     maximumFractionDigits: 2,
                   })}
                   color="bg-teal"
@@ -2537,78 +2615,195 @@ export default function Home() {
                 <SummaryCard
                   icon={Euro}
                   label="Guadagno teorico"
-                  value={euro.format(wage)}
+                  value={euro.format(workPeriodWage)}
                   color="bg-ink"
                 />
                 <SummaryCard
                   icon={Utensils}
                   label="Buoni pasto"
-                  value={`${mealCount} · ${euro.format(benefits)}`}
+                  value={`${workPeriodMealCount} · ${euro.format(workPeriodBenefits)}`}
                   color="bg-coral"
                 />
               </div>
               <Card className="rounded-[1.75rem] border-0 shadow-sm ring-1 ring-ink/7">
                 <CardHeader className="px-5 pt-5">
                   <CardTitle className="font-heading text-xl font-extrabold">
-                    Riepilogo mensile
+                    Periodo di analisi
                   </CardTitle>
-                  <p className="text-sm capitalize text-muted-foreground">
-                    Guadagno teorico e buoni pasto · {monthName}
+                  <p className="text-sm text-muted-foreground">
+                    Scegli giorni, mesi o anni per aggiornare riepiloghi e grafici.
                   </p>
                 </CardHeader>
-                <CardContent className="h-[230px] px-3 pb-4">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart
-                      data={[
-                        {
-                          name: 'Guadagno',
-                          value: wage,
-                          fill: appearance.brandColor,
-                        },
-                        {
-                          name: 'Buoni pasto',
-                          value: benefits,
-                          fill: appearance.accentColor,
-                        },
-                      ]}
-                      barSize={56}
-                      margin={{ left: 4, right: 8, top: 8, bottom: 0 }}
+                <CardContent className="grid gap-4 sm:grid-cols-2">
+                  <Field label="Vista">
+                    <NativeSelect
+                      value={workPeriod}
+                      onChange={(event) =>
+                        setWorkPeriod(event.target.value as WorkPeriod)
+                      }
                     >
-                      <CartesianGrid
-                        vertical={false}
-                        stroke="var(--border)"
-                        strokeDasharray="3 5"
-                      />
-                      <XAxis
-                        dataKey="name"
-                        axisLine={false}
-                        tickLine={false}
-                        tick={{
-                          fill: 'var(--muted-foreground)',
-                          fontSize: 12,
-                          fontWeight: 600,
-                        }}
-                      />
-                      <YAxis hide />
-                      <Tooltip
-                        cursor={{ fill: 'var(--muted)' }}
-                        formatter={(value) => [
-                          euro.format(Number(value)),
-                          'Totale',
-                        ]}
-                        contentStyle={{
-                          borderRadius: 14,
-                          border: '1px solid var(--border)',
-                          backgroundColor: 'var(--popover)',
-                          color: 'var(--popover-foreground)',
-                          boxShadow: '0 12px 30px rgba(20,47,42,.12)',
-                        }}
-                      />
-                      <Bar dataKey="value" radius={[14, 14, 4, 4]} />
-                    </BarChart>
-                  </ResponsiveContainer>
+                      <NativeSelectOption value="day">Giorno</NativeSelectOption>
+                      <NativeSelectOption value="month">Mese</NativeSelectOption>
+                      <NativeSelectOption value="year">Anno</NativeSelectOption>
+                    </NativeSelect>
+                  </Field>
+                  <Field
+                    label={
+                      workPeriod === 'day'
+                        ? 'Giorno da visualizzare'
+                        : workPeriod === 'month'
+                          ? 'Mese da visualizzare'
+                          : 'Anno da visualizzare'
+                    }
+                  >
+                    <Input
+                      type={workPeriod === 'day' ? 'date' : workPeriod === 'month' ? 'month' : 'number'}
+                      min={workPeriod === 'year' ? '2000' : undefined}
+                      max={workPeriod === 'year' ? '2100' : undefined}
+                      value={
+                        workPeriod === 'year'
+                          ? workReferenceDate.slice(0, 4)
+                          : workPeriod === 'month'
+                            ? workReferenceDate.slice(0, 7)
+                            : workReferenceDate
+                      }
+                      onChange={(event) => {
+                        const value = event.target.value;
+                        if (!value) return;
+                        if (workPeriod === 'year') {
+                          setWorkReferenceDate(`${value}-01-01`);
+                        } else if (workPeriod === 'month') {
+                          setWorkReferenceDate(`${value}-01`);
+                        } else {
+                          setWorkReferenceDate(value);
+                        }
+                      }}
+                    />
+                  </Field>
                 </CardContent>
               </Card>
+              <div className="grid gap-5 xl:grid-cols-2">
+                <Card className="rounded-[1.75rem] border-0 shadow-sm ring-1 ring-ink/7">
+                  <CardHeader className="px-5 pt-5">
+                    <CardTitle className="font-heading text-xl font-extrabold">
+                      Ore lavorate
+                    </CardTitle>
+                    <p className="text-sm capitalize text-muted-foreground">
+                      {workPeriodLabel}
+                    </p>
+                  </CardHeader>
+                  <CardContent className="h-[230px] px-3 pb-4">
+                    {workChartData.length ? (
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart
+                          data={workChartData}
+                          barSize={workPeriod === 'month' ? 18 : 42}
+                          margin={{ left: 4, right: 8, top: 8, bottom: 0 }}
+                        >
+                          <CartesianGrid
+                            vertical={false}
+                            stroke="var(--border)"
+                            strokeDasharray="3 5"
+                          />
+                          <XAxis
+                            dataKey="name"
+                            axisLine={false}
+                            tickLine={false}
+                            interval={workPeriod === 'month' ? 'preserveStartEnd' : 0}
+                            tick={{
+                              fill: 'var(--muted-foreground)',
+                              fontSize: 11,
+                              fontWeight: 600,
+                            }}
+                          />
+                          <YAxis hide />
+                          <Tooltip
+                            cursor={{ fill: 'var(--muted)' }}
+                            formatter={(value) => [
+                              `${Number(value).toLocaleString('it-IT', {
+                                maximumFractionDigits: 2,
+                              })} h`,
+                              'Ore',
+                            ]}
+                            contentStyle={{
+                              borderRadius: 14,
+                              border: '1px solid var(--border)',
+                              backgroundColor: 'var(--popover)',
+                              color: 'var(--popover-foreground)',
+                            }}
+                          />
+                          <Bar
+                            dataKey="hours"
+                            fill={appearance.accentColor}
+                            radius={[10, 10, 3, 3]}
+                          />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    ) : (
+                      <EmptyState text="Nessuna ora registrata nel periodo selezionato." />
+                    )}
+                  </CardContent>
+                </Card>
+                <Card className="rounded-[1.75rem] border-0 shadow-sm ring-1 ring-ink/7">
+                  <CardHeader className="px-5 pt-5">
+                    <CardTitle className="font-heading text-xl font-extrabold">
+                      Guadagno teorico
+                    </CardTitle>
+                    <p className="text-sm capitalize text-muted-foreground">
+                      {workPeriodLabel} · non incluso nel saldo bancario
+                    </p>
+                  </CardHeader>
+                  <CardContent className="h-[230px] px-3 pb-4">
+                    {workChartData.length ? (
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart
+                          data={workChartData}
+                          barSize={workPeriod === 'month' ? 18 : 42}
+                          margin={{ left: 4, right: 8, top: 8, bottom: 0 }}
+                        >
+                          <CartesianGrid
+                            vertical={false}
+                            stroke="var(--border)"
+                            strokeDasharray="3 5"
+                          />
+                          <XAxis
+                            dataKey="name"
+                            axisLine={false}
+                            tickLine={false}
+                            interval={workPeriod === 'month' ? 'preserveStartEnd' : 0}
+                            tick={{
+                              fill: 'var(--muted-foreground)',
+                              fontSize: 11,
+                              fontWeight: 600,
+                            }}
+                          />
+                          <YAxis hide />
+                          <Tooltip
+                            cursor={{ fill: 'var(--muted)' }}
+                            formatter={(value) => [
+                              euro.format(Number(value)),
+                              'Guadagno',
+                            ]}
+                            contentStyle={{
+                              borderRadius: 14,
+                              border: '1px solid var(--border)',
+                              backgroundColor: 'var(--popover)',
+                              color: 'var(--popover-foreground)',
+                            }}
+                          />
+                          <Bar
+                            dataKey="earnings"
+                            fill={appearance.brandColor}
+                            radius={[10, 10, 3, 3]}
+                          />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    ) : (
+                      <EmptyState text="Nessun guadagno da calcolare nel periodo selezionato." />
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
               <Card className="rounded-[1.75rem] border-0 shadow-sm ring-1 ring-ink/7">
                 <CardHeader className="px-5 pt-5">
                   <CardTitle className="font-heading text-xl font-extrabold">
@@ -2676,47 +2871,51 @@ export default function Home() {
               <Card className="rounded-[1.75rem] border-0 shadow-sm ring-1 ring-ink/7">
                 <CardHeader className="border-b border-border px-5 py-5">
                   <CardTitle className="font-heading text-xl font-extrabold">
-                    Registro giornaliero
+                    Registro del periodo
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="divide-y divide-border px-3 pb-2">
-                  {workEntries.map((item) => (
-                    <div
-                      key={item.id}
-                      className="flex items-center gap-3 px-2 py-4"
-                    >
-                      <span className="grid size-10 place-items-center rounded-xl bg-muted">
-                        <Clock3 className="size-5" />
-                      </span>
-                      <span className="flex-1">
-                        <strong className="block">
-                          {shortDate.format(new Date(`${item.date}T00:00:00`))}
-                        </strong>
-                        <span className="text-xs text-muted-foreground">
-                          {item.start}–{item.end} · pausa {item.breakMinutes}{' '}
-                          min
-                        </span>
-                      </span>
-                      <strong>
-                        {hoursFor(item).toLocaleString('it-IT', {
-                          maximumFractionDigits: 2,
-                        })}{' '}
-                        h
-                      </strong>
-                      <Button
-                        aria-label="Elimina giornata"
-                        size="icon-sm"
-                        variant="ghost"
-                        onClick={() =>
-                          setWorkEntries((all) =>
-                            all.filter((entry) => entry.id !== item.id),
-                          )
-                        }
+                  {workPeriodEntries.length ? (
+                    workPeriodEntries.map((item) => (
+                      <div
+                        key={item.id}
+                        className="flex items-center gap-3 px-2 py-4"
                       >
-                        <Trash2 />
-                      </Button>
-                    </div>
-                  ))}
+                        <span className="grid size-10 place-items-center rounded-xl bg-muted">
+                          <Clock3 className="size-5" />
+                        </span>
+                        <span className="flex-1">
+                          <strong className="block">
+                            {shortDate.format(new Date(`${item.date}T00:00:00`))}
+                          </strong>
+                          <span className="text-xs text-muted-foreground">
+                            {item.start}–{item.end} · pausa {item.breakMinutes}{' '}
+                            min
+                          </span>
+                        </span>
+                        <strong>
+                          {hoursFor(item).toLocaleString('it-IT', {
+                            maximumFractionDigits: 2,
+                          })}{' '}
+                          h
+                        </strong>
+                        <Button
+                          aria-label="Elimina giornata"
+                          size="icon-sm"
+                          variant="ghost"
+                          onClick={() =>
+                            setWorkEntries((all) =>
+                              all.filter((entry) => entry.id !== item.id),
+                            )
+                          }
+                        >
+                          <Trash2 />
+                        </Button>
+                      </div>
+                    ))
+                  ) : (
+                    <EmptyState text="Nessuna giornata registrata nel periodo selezionato." />
+                  )}
                 </CardContent>
               </Card>
             </section>
@@ -2772,10 +2971,10 @@ export default function Home() {
                   </Field>
                   <div className="rounded-2xl bg-ink p-4 text-white">
                     <p className="text-xs font-bold uppercase tracking-wider text-white/50">
-                      Totale mese incl. buoni
+                      Stima periodo incl. buoni
                     </p>
                     <p className="mt-2 text-3xl font-black">
-                      {euro.format(wage + benefits)}
+                      {euro.format(workPeriodWage + workPeriodBenefits)}
                     </p>
                   </div>
                 </CardContent>
