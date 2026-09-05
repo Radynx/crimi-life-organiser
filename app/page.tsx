@@ -2011,22 +2011,22 @@ export default function Home() {
   if (!authUser) return <AuthGate />;
 
   return (
-    <main className="min-h-screen bg-background pb-24 text-foreground lg:pb-10">
+    <main className="min-h-screen min-w-0 max-w-full overflow-x-hidden bg-background pb-24 text-foreground lg:pb-10">
       <header className="sticky top-0 z-40 border-b border-white/10 bg-ink/95 text-white backdrop-blur-xl">
-        <div className="mx-auto flex h-18 max-w-7xl items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
+        <div className="mx-auto flex h-18 min-w-0 max-w-7xl items-center justify-between gap-2 px-3 sm:gap-4 sm:px-6 lg:px-8">
           <button
-            className="flex items-center gap-3 text-left"
+            className="flex min-w-0 shrink items-center gap-2 text-left sm:gap-3"
             type="button"
             onClick={() => setSection('dashboard')}
           >
-            <span className="grid size-10 place-items-center rounded-2xl bg-lime text-ink shadow-[0_0_0_5px_rgba(215,223,35,.12)]">
+            <span className="grid size-9 shrink-0 place-items-center rounded-2xl bg-lime text-ink shadow-[0_0_0_5px_rgba(215,223,35,.12)] sm:size-10">
               <CircleGauge className="size-5" strokeWidth={2.4} />
             </span>
-            <span>
+            <span className="min-w-0">
               <span className="block text-[0.7rem] font-bold uppercase tracking-[0.22em] text-white/55">
                 Crimi
               </span>
-              <span className="block font-heading text-lg font-extrabold tracking-[-0.035em]">
+              <span className="block truncate font-heading text-base font-extrabold tracking-[-0.035em] sm:text-lg">
                 Life Organiser
               </span>
             </span>
@@ -2047,7 +2047,7 @@ export default function Home() {
               </Button>
             ))}
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex shrink-0 items-center gap-0.5 sm:gap-2">
             <Button
               aria-label="Attiva notifiche"
               onClick={requestNotifications}
@@ -2064,7 +2064,7 @@ export default function Home() {
                   aria-expanded={accountMenuOpen}
                   aria-haspopup="menu"
                   aria-label="Apri menu account"
-                  className="h-10 max-w-52 rounded-2xl px-3 text-white hover:bg-white/10 hover:text-white"
+                  className="h-10 max-w-10 rounded-2xl px-2 text-white hover:bg-white/10 hover:text-white md:max-w-52 md:px-3"
                   onClick={() => setAccountMenuOpen((open) => !open)}
                   type="button"
                   variant="ghost"
@@ -2131,7 +2131,7 @@ export default function Home() {
                 setAppearanceOpen(true);
               }}
               variant="ghost"
-              className="h-10 rounded-2xl px-3 text-white hover:bg-white/10 hover:text-white"
+              className="h-10 rounded-2xl px-2 text-white hover:bg-white/10 hover:text-white sm:px-3"
             >
               <Settings2 />
               <span className="hidden sm:inline">Impostazioni</span>
@@ -2182,9 +2182,9 @@ export default function Home() {
 
         <TabsContent
           value="dashboard"
-          className="grid gap-6 px-4 py-5 sm:px-6 lg:grid-cols-[minmax(0,1.65fr)_minmax(300px,.85fr)] lg:px-8 lg:py-8"
+          className="grid min-w-0 gap-6 px-4 py-5 sm:px-6 lg:grid-cols-[minmax(0,1.65fr)_minmax(300px,.85fr)] lg:px-8 lg:py-8"
         >
-          <section className="space-y-6">
+          <section className="min-w-0 space-y-6">
             <Card className="relative min-h-[292px] overflow-hidden rounded-[2rem] border-0 bg-ink text-white shadow-[0_24px_70px_rgba(20,47,42,.18)] ring-0">
               <div className="absolute -right-10 -top-16 size-64 rounded-full border-[46px] border-teal/30" />
               <div className="absolute bottom-0 right-[22%] size-28 translate-y-1/2 rotate-12 rounded-[2.5rem] bg-coral/90" />
@@ -2210,8 +2210,8 @@ export default function Home() {
               </CardContent>
             </Card>
 
-            <div className="grid gap-5 md:grid-cols-2">
-              <Card className="rounded-[1.75rem] border-0 bg-card shadow-sm ring-1 ring-ink/7">
+            <div className="grid min-w-0 gap-5 md:grid-cols-2">
+              <Card className="min-w-0 rounded-[1.75rem] border-0 bg-card shadow-sm ring-1 ring-ink/7">
                 <CardHeader className="flex-row items-center justify-between px-5 pt-5">
                   <CardTitle className="font-heading text-xl font-extrabold tracking-tight">
                     Dove spendi
@@ -2220,7 +2220,7 @@ export default function Home() {
                     MESE CORRENTE
                   </Badge>
                 </CardHeader>
-                <CardContent className="grid min-h-[205px] grid-cols-[145px_1fr] items-center gap-2 px-4 pb-5">
+                <CardContent className="grid min-h-[205px] min-w-0 grid-cols-1 items-center gap-3 px-4 pb-5 sm:grid-cols-[145px_minmax(0,1fr)] sm:gap-2">
                   {categoryData.length ? (
                     <>
                       <div className="relative h-40">
@@ -2249,7 +2249,7 @@ export default function Home() {
                           </strong>
                         </div>
                       </div>
-                      <ul className="space-y-2.5">
+                      <ul className="min-w-0 space-y-2.5">
                         {categoryData.slice(0, 5).map((item) => (
                           <li
                             key={item.name}
@@ -2274,7 +2274,7 @@ export default function Home() {
                   )}
                 </CardContent>
               </Card>
-              <Card className="rounded-[1.75rem] border-0 bg-card shadow-sm ring-1 ring-ink/7">
+              <Card className="min-w-0 rounded-[1.75rem] border-0 bg-card shadow-sm ring-1 ring-ink/7">
                 <CardHeader className="px-5 pt-5">
                   <CardTitle className="font-heading text-xl font-extrabold tracking-tight">
                     Uscite del mese
@@ -2335,7 +2335,7 @@ export default function Home() {
             </div>
           </section>
 
-          <aside className="space-y-5">
+          <aside className="min-w-0 space-y-5">
             <Card className="rounded-[1.75rem] border-0 bg-lime shadow-sm ring-0">
               <CardContent className="p-5">
                 <div className="flex items-start justify-between">
@@ -2401,13 +2401,13 @@ export default function Home() {
                   <Plus /> Aggiungi
                 </Button>
               </CardHeader>
-              <CardContent className="space-y-2 px-3 pb-4">
+              <CardContent className="min-w-0 space-y-2 px-3 pb-4">
                 {bankAccounts.length ? (
                   <>
                     {bankAccounts.map((account) => (
                       <div
                         key={account.id}
-                        className="flex items-center gap-3 rounded-xl bg-muted/60 px-3 py-2.5"
+                        className="flex min-w-0 flex-wrap items-center gap-2 rounded-xl bg-muted/60 px-3 py-2.5 sm:flex-nowrap sm:gap-3"
                       >
                         <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-teal/12 text-teal">
                           <WalletCards className="size-4" />
@@ -2420,7 +2420,7 @@ export default function Home() {
                             {account.iban || 'Conto personale'}
                           </span>
                         </span>
-                        <span className="text-sm font-extrabold">
+                        <span className="ml-auto shrink-0 text-sm font-extrabold sm:ml-0">
                           {euro.format(account.balance)}
                         </span>
                         <Button
@@ -2466,7 +2466,7 @@ export default function Home() {
                 )}
               </CardContent>
             </Card>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid min-w-0 grid-cols-2 gap-3">
               {settings.enabledSections.mezzi && (
                 <QuickCard
                   color="bg-teal"
@@ -2491,7 +2491,7 @@ export default function Home() {
 
         <TabsContent
           value="spese"
-          className="px-4 py-5 sm:px-6 lg:px-8 lg:py-8"
+          className="min-w-0 px-4 py-5 sm:px-6 lg:px-8 lg:py-8"
         >
           <PageHeading
             eyebrow="Registro scontrini"
@@ -2506,7 +2506,7 @@ export default function Home() {
               </Button>
             }
           />
-          <div className="mt-6 grid gap-5 lg:grid-cols-[.7fr_1.3fr]">
+          <div className="mt-6 grid min-w-0 gap-5 lg:grid-cols-[.7fr_1.3fr]">
             <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-1">
               <SummaryCard
                 icon={ArrowDownRight}
@@ -2583,7 +2583,7 @@ export default function Home() {
                 </CardContent>
               </Card>
             </div>
-            <Card className="rounded-[1.75rem] border-0 shadow-sm ring-1 ring-ink/7">
+            <Card className="min-w-0 rounded-[1.75rem] border-0 shadow-sm ring-1 ring-ink/7">
               <CardHeader className="border-b border-border px-5 py-5">
                 <CardTitle className="font-heading text-xl font-extrabold">
                   Movimenti
@@ -2594,7 +2594,7 @@ export default function Home() {
                   expenses.map((item) => (
                     <div
                       key={item.id}
-                      className="flex items-center gap-3 px-2 py-4"
+                      className="flex min-w-0 items-center gap-2 px-2 py-4 sm:gap-3"
                     >
                       <ExpenseRow expense={item} expanded />
                       <Button
@@ -2618,7 +2618,7 @@ export default function Home() {
 
         <TabsContent
           value="mezzi"
-          className="px-4 py-5 sm:px-6 lg:px-8 lg:py-8"
+          className="min-w-0 px-4 py-5 sm:px-6 lg:px-8 lg:py-8"
         >
           <PageHeading
             eyebrow="Garage Crimi"
@@ -2641,7 +2641,7 @@ export default function Home() {
               </div>
             }
           />
-          <div className="mt-6 grid gap-5 lg:grid-cols-2">
+          <div className="mt-6 grid min-w-0 gap-5 lg:grid-cols-2">
             {vehicles.map((vehicle) => {
               const vehicleDeadlines = deadlines
                 .filter(
@@ -2654,7 +2654,7 @@ export default function Home() {
               return (
                 <Card
                   key={vehicle.id}
-                  className="rounded-[2rem] border-0 shadow-sm ring-1 ring-ink/7"
+                  className="min-w-0 rounded-[2rem] border-0 shadow-sm ring-1 ring-ink/7"
                 >
                   <CardHeader className="bg-ink px-6 py-6 text-white">
                     <div className="flex items-center justify-between">
@@ -2804,15 +2804,15 @@ export default function Home() {
 
         <TabsContent
           value="lavoro"
-          className="px-4 py-5 sm:px-6 lg:px-8 lg:py-8"
+          className="min-w-0 px-4 py-5 sm:px-6 lg:px-8 lg:py-8"
         >
           <PageHeading
             eyebrow="Busta paga"
             title="Tempo che vale"
             description="Registra le giornate e controlla compenso e buoni pasto maturati."
           />
-          <div className="mt-6 grid gap-5 lg:grid-cols-[1.15fr_.85fr]">
-            <section className="space-y-5">
+          <div className="mt-6 grid min-w-0 gap-5 lg:grid-cols-[1.15fr_.85fr]">
+            <section className="min-w-0 space-y-5">
               <div className="grid gap-3 sm:grid-cols-3">
                 <SummaryCard
                   icon={Clock3}
@@ -2898,8 +2898,8 @@ export default function Home() {
                   </Field>
                 </CardContent>
               </Card>
-              <div className="grid gap-5 xl:grid-cols-2">
-                <Card className="rounded-[1.75rem] border-0 shadow-sm ring-1 ring-ink/7">
+              <div className="grid min-w-0 gap-5 xl:grid-cols-2">
+                <Card className="min-w-0 rounded-[1.75rem] border-0 shadow-sm ring-1 ring-ink/7">
                   <CardHeader className="px-5 pt-5">
                     <CardTitle className="font-heading text-xl font-extrabold">
                       Ore lavorate
@@ -2960,7 +2960,7 @@ export default function Home() {
                     )}
                   </CardContent>
                 </Card>
-                <Card className="rounded-[1.75rem] border-0 shadow-sm ring-1 ring-ink/7">
+                <Card className="min-w-0 rounded-[1.75rem] border-0 shadow-sm ring-1 ring-ink/7">
                   <CardHeader className="px-5 pt-5">
                     <CardTitle className="font-heading text-xl font-extrabold">
                       Guadagno teorico
@@ -3095,13 +3095,13 @@ export default function Home() {
                     workPeriodEntries.map((item) => (
                       <div
                         key={item.id}
-                        className="flex items-center gap-3 px-2 py-4"
+                        className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-2 px-2 py-4 sm:gap-3"
                       >
                         <span className="grid size-10 place-items-center rounded-xl bg-muted">
                           <Clock3 className="size-5" />
                         </span>
-                        <span className="flex-1">
-                          <strong className="block">
+                        <span className="min-w-0">
+                          <strong className="block truncate">
                             {shortDate.format(new Date(`${item.date}T00:00:00`))}
                           </strong>
                           <span className="text-xs text-muted-foreground">
@@ -3109,7 +3109,7 @@ export default function Home() {
                             min
                           </span>
                         </span>
-                        <strong>
+                        <strong className="shrink-0">
                           {hoursFor(item).toLocaleString('it-IT', {
                             maximumFractionDigits: 2,
                           })}{' '}
@@ -4239,7 +4239,7 @@ export default function Home() {
       </Dialog>
 
       <Dialog open={appearanceOpen} onOpenChange={setAppearanceOpen}>
-        <DialogContent className="inset-0 left-0 top-0 h-[100dvh] max-h-[100dvh] w-screen max-w-none translate-x-0 translate-y-0 overflow-y-auto rounded-none border-0 bg-background p-4 sm:max-w-none sm:p-8">
+        <DialogContent className="inset-0 left-0 top-0 h-[100dvh] max-h-[100dvh] w-full max-w-none min-w-0 translate-x-0 translate-y-0 overflow-x-hidden overflow-y-auto rounded-none border-0 bg-background p-4 sm:max-w-none sm:p-8">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 font-heading text-2xl font-black">
               <Settings2 className="size-6 text-teal" /> Impostazioni
@@ -4249,7 +4249,7 @@ export default function Home() {
             </DialogDescription>
           </DialogHeader>
           <Tabs
-            className="mt-2"
+            className="mt-2 min-w-0"
             value={settingsTab}
             onValueChange={(value) =>
               setSettingsTab(value as typeof settingsTab)
@@ -4281,7 +4281,7 @@ export default function Home() {
                 Sezioni
               </TabsTrigger>
             </TabsList>
-            <TabsContent value="account" className="mt-4">
+            <TabsContent value="account" className="mt-4 min-w-0">
               <AccountSettingsPanel
                 authUser={authUser}
                 onAddAddress={addAddress}
@@ -4292,7 +4292,7 @@ export default function Home() {
                 profile={profile}
               />
             </TabsContent>
-            <TabsContent value="personalizza" className="mt-4">
+            <TabsContent value="personalizza" className="mt-4 min-w-0">
               <div className="space-y-6">
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label="Aspetto">
@@ -4528,7 +4528,7 @@ export default function Home() {
             </div>
               </div>
             </TabsContent>
-            <TabsContent value="temi" className="mt-4">
+            <TabsContent value="temi" className="mt-4 min-w-0">
               <div className="space-y-3 rounded-2xl bg-muted/60 p-4">
                 <div>
                   <p className="text-sm font-bold">Temi salvati</p>
@@ -4584,7 +4584,7 @@ export default function Home() {
                 </div>
               </div>
             </TabsContent>
-            <TabsContent value="sezioni" className="mt-4">
+            <TabsContent value="sezioni" className="mt-4 min-w-0">
               <div className="space-y-3">
                 <div>
                   <p className="text-sm font-bold">Sezioni visibili</p>
@@ -4992,7 +4992,7 @@ function AccountSettingsPanel({
   onResetPassword: () => void;
 }) {
   return (
-    <div className="space-y-5">
+    <div className="min-w-0 space-y-5">
       <div className="rounded-2xl bg-muted/60 p-4">
         <div className="mb-4 flex items-center gap-3">
           <span className="grid size-10 place-items-center rounded-xl bg-teal text-white">
@@ -5046,8 +5046,8 @@ function AccountSettingsPanel({
       </div>
 
       <div className="rounded-2xl border border-border p-4">
-        <div className="flex items-start justify-between gap-3">
-          <div>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
             <p className="text-sm font-bold">Altri indirizzi</p>
             <p className="mt-1 text-xs text-muted-foreground">
               Salva lavoro, famiglia o altri luoghi utili.
@@ -5197,13 +5197,13 @@ function QuickCard({
 }) {
   return (
     <button
-      className={`${color} rounded-[1.5rem] p-4 text-left text-white transition hover:-translate-y-0.5`}
+      className={`${color} min-w-0 rounded-[1.5rem] p-3 text-left text-white transition hover:-translate-y-0.5 sm:p-4`}
       onClick={onClick}
       type="button"
     >
       <Icon className="size-6" />
-      <span className="mt-6 block text-sm font-bold">{title}</span>
-      <span className="mt-1 block text-xs text-white/70">{text}</span>
+      <span className="mt-4 block break-words text-sm font-bold sm:mt-6">{title}</span>
+      <span className="mt-1 block break-words text-xs text-white/70">{text}</span>
     </button>
   );
 }
@@ -5237,14 +5237,14 @@ function SummaryCard({
   color: string;
 }) {
   return (
-    <Card className="rounded-[1.5rem] border-0 py-4 shadow-sm ring-1 ring-ink/7">
-      <CardContent className="flex items-center gap-3 px-4">
+    <Card className="min-w-0 rounded-[1.5rem] border-0 py-4 shadow-sm ring-1 ring-ink/7">
+      <CardContent className="flex min-w-0 items-center gap-3 px-4">
         <span
           className={`grid size-11 shrink-0 place-items-center rounded-2xl ${color} text-white`}
         >
           <Icon className="size-5" />
         </span>
-        <span className="min-w-0">
+        <span className="min-w-0 flex-1">
           <span className="block text-xs font-semibold text-muted-foreground">
             {label}
           </span>
@@ -5326,17 +5326,17 @@ function PageHeading({
   action?: React.ReactNode;
 }) {
   return (
-    <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-      <div>
+    <div className="flex min-w-0 flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+      <div className="min-w-0">
         <p className="text-xs font-black uppercase tracking-[.18em] text-teal">
           {eyebrow}
         </p>
-        <h2 className="mt-2 font-heading text-4xl font-black tracking-[-.05em] sm:text-5xl">
+        <h2 className="mt-2 break-words font-heading text-4xl font-black tracking-[-.05em] sm:text-5xl">
           {title}
         </h2>
         <p className="mt-2 max-w-2xl text-muted-foreground">{description}</p>
       </div>
-      {action}
+      {action && <div className="w-full shrink-0 sm:w-auto">{action}</div>}
     </div>
   );
 }
