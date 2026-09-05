@@ -87,6 +87,7 @@ type Expense = {
   category: string;
   amount: number;
   date: string;
+  bankAccountId?: string;
   vehicle?: Vehicle;
   vehicleId?: string;
   vehicleNote?: string;
@@ -184,6 +185,7 @@ type AccountData = {
   deadlines: Deadline[];
   vehicles: VehicleRecord[];
   bankAccounts: BankAccount[];
+  categories: string[];
   settings: Settings;
   profile: Profile;
   appearance: Appearance;
@@ -210,6 +212,16 @@ const CATEGORIES = [
   'Casa',
   'Salute',
   'Altro',
+];
+const STORE_SUGGESTIONS = [
+  'Coop',
+  'Conad',
+  'Esselunga',
+  'Lidl',
+  'Carrefour',
+  'Amazon',
+  'Eni Station',
+  'Q8',
 ];
 const SECTION_OPTIONS: {
   value: Section;
@@ -494,6 +506,11 @@ function hoursFor(entry: WorkEntry) {
   return Math.max(0, (minutes - entry.breakMinutes) / 60);
 }
 
+function isDieselFuel(fuel: string) {
+  const normalized = fuel.trim().toLowerCase();
+  return normalized.includes('diesel') || normalized.includes('gasolio');
+}
+
 function mealDaysFor(entries: WorkEntry[], minimumHours: number) {
   const daily = entries.reduce<Record<string, number>>(
     (acc, item) => ({
@@ -570,6 +587,22 @@ function mergeSettings(raw?: Partial<Settings>): Settings {
   };
 }
 
+function mergeCategories(raw?: unknown) {
+  const categories = [...CATEGORIES];
+  const seen = new Set(categories.map((category) => category.toLocaleLowerCase()));
+  if (!Array.isArray(raw)) return categories;
+  raw.forEach((value) => {
+    if (typeof value !== 'string') return;
+    const category = value.trim();
+    const key = category.toLocaleLowerCase();
+    if (category && !seen.has(key)) {
+      categories.push(category);
+      seen.add(key);
+    }
+  });
+  return categories;
+}
+
 function parseAccountData(raw: unknown): Partial<AccountData> {
   if (!raw || typeof raw !== 'object') return {};
   const value = raw as Record<string, unknown>;
@@ -593,6 +626,8 @@ function parseAccountData(raw: unknown): Partial<AccountData> {
         notes: String(item.notes ?? ''),
       };
     });
+  if (Array.isArray(value.categories))
+    data.categories = mergeCategories(value.categories);
   if (value.settings && typeof value.settings === 'object')
     data.settings = value.settings as Settings;
   if (value.profile && typeof value.profile === 'object') {
@@ -654,6 +689,8 @@ export default function Home() {
   const [vehicles, setVehicles] = useState<VehicleRecord[]>(initialVehicles);
   const [bankAccounts, setBankAccounts] =
     useState<BankAccount[]>(initialBankAccounts);
+  const [categories, setCategories] = useState<string[]>(CATEGORIES);
+  const [categoryDraft, setCategoryDraft] = useState('');
   const [settings, setSettings] = useState<Settings>(initialSettings);
   const [profile, setProfile] = useState<Profile>(initialProfile);
   const [appearance, setAppearance] = useState<Appearance>(initialAppearance);
@@ -707,6 +744,7 @@ export default function Home() {
     vehicleNote: '',
     items: '',
     receipt: '',
+    bankAccountId: initialBankAccounts[0].id,
   });
   const [workDraft, setWorkDraft] = useState({
     date: '2026-09-03',
@@ -754,6 +792,8 @@ export default function Home() {
         setDeadlines(initialDeadlines);
         setVehicles(initialVehicles);
         setBankAccounts(initialBankAccounts);
+        setCategories(CATEGORIES);
+        setCategoryDraft('');
         setSettings(initialSettings);
         setProfile(initialProfile);
         setAppearance(initialAppearance);
@@ -797,6 +837,7 @@ export default function Home() {
           },
         ]);
       else if (data.bankAccounts) setBankAccounts(data.bankAccounts);
+      if (data.categories) setCategories(mergeCategories(data.categories));
       if (data.settings) setSettings(mergeSettings(data.settings));
       if (data.profile)
         setProfile({
@@ -876,6 +917,7 @@ export default function Home() {
                   },
                 ]
               : firstAccountData?.bankAccounts ?? initialBankAccounts),
+          categories: mergeCategories(firstAccountData?.categories),
           settings: mergeSettings(firstAccountData?.settings),
           profile: { ...initialProfile, ...firstAccountData?.profile },
           appearance: { ...initialAppearance, ...firstAccountData?.appearance },
@@ -919,6 +961,7 @@ export default function Home() {
       deadlines,
       vehicles,
       bankAccounts,
+      categories,
       settings,
       profile,
       appearance,
@@ -947,6 +990,7 @@ export default function Home() {
     appearance,
     authUser,
     bankAccounts,
+    categories,
     deadlines,
     expenses,
     hydrated,
@@ -1102,6 +1146,63 @@ export default function Home() {
     [bankAccounts],
   );
   const availableBalance = bankTotal;
+  const storeSuggestions = useMemo(() => {
+    const names = [
+      ...STORE_SUGGESTIONS,
+      ...expenses.map((expense) => expense.store.trim()),
+    ].filter(Boolean);
+    return Array.from(new Set(names)).sort((first, second) =>
+      first.localeCompare(second, 'it'),
+    );
+  }, [expenses]);
+  const expenseVehicles = useMemo(
+    () =>
+      expenseDraft.category === 'Gasolio'
+        ? vehicles.filter((vehicle) => isDieselFuel(vehicle.fuel))
+        : vehicles,
+    [expenseDraft.category, vehicles],
+  );
+
+  useEffect(() => {
+    if (bankAccounts.length === 0) {
+      if (expenseDraft.bankAccountId) {
+        setExpenseDraft((draft) => ({ ...draft, bankAccountId: '' }));
+      }
+      return;
+    }
+    if (!bankAccounts.some((account) => account.id === expenseDraft.bankAccountId)) {
+      setExpenseDraft((draft) => ({
+        ...draft,
+        bankAccountId: bankAccounts[0].id,
+      }));
+    }
+  }, [bankAccounts, expenseDraft.bankAccountId]);
+
+  useEffect(() => {
+    if (expenseDraft.category !== 'Gasolio') return;
+    const firstDiesel = expenseVehicles[0];
+    const selectedDiesel = expenseVehicles.some(
+      (vehicle) => vehicle.id === expenseDraft.vehicleId,
+    );
+    if (selectedDiesel) return;
+    if (firstDiesel) {
+      setExpenseDraft((draft) => ({
+        ...draft,
+        vehicle: firstDiesel.type,
+        vehicleId: firstDiesel.id,
+        vehicleNote: '',
+      }));
+      return;
+    }
+    if (expenseDraft.vehicleId !== 'Altro' || expenseDraft.vehicle !== 'Altro') {
+      setExpenseDraft((draft) => ({
+        ...draft,
+        vehicle: 'Altro',
+        vehicleId: 'Altro',
+        vehicleNote: '',
+      }));
+    }
+  }, [expenseDraft.category, expenseDraft.vehicle, expenseDraft.vehicleId, expenseVehicles]);
 
   const workPeriodEntries = useMemo(() => {
     if (workPeriod === 'day') {
@@ -1218,6 +1319,17 @@ export default function Home() {
     return created;
   }, []);
 
+  const chargeBank = useCallback((accountId: string | undefined, amount: number) => {
+    if (!accountId) return;
+    setBankAccounts((current) =>
+      current.map((account) =>
+        account.id === accountId
+          ? { ...account, balance: account.balance - amount }
+          : account,
+      ),
+    );
+  }, []);
+
   const addWorkEntry = useCallback((entry: Omit<WorkEntry, 'id'>) => {
     const created = { ...entry, id: uid('work') };
     setWorkEntries((current) => [created, ...current]);
@@ -1250,9 +1362,10 @@ export default function Home() {
               type: 'object',
               properties: {
                 store: { type: 'string' },
-                category: { type: 'string', enum: CATEGORIES },
+                category: { type: 'string', enum: categories },
                 amount: { type: 'number', exclusiveMinimum: 0 },
                 date: { type: 'string', format: 'date' },
+                bankAccountId: { type: 'string' },
                 vehicle: {
                   type: 'string',
                   enum: ['Macchina', 'Moto', 'Altro'],
@@ -1269,7 +1382,7 @@ export default function Home() {
               if (
                 !value.store?.trim() ||
                 !value.category ||
-                !CATEGORIES.includes(value.category) ||
+                !categories.includes(value.category) ||
                 !value.amount ||
                 value.amount <= 0 ||
                 !/^\d{4}-\d{2}-\d{2}$/.test(value.date ?? '')
@@ -1282,10 +1395,12 @@ export default function Home() {
                 category: value.category,
                 amount: value.amount,
                 date: value.date!,
+                bankAccountId: value.bankAccountId,
                 vehicle: value.vehicle,
                 vehicleId: value.vehicleId,
                 items: value.items?.trim(),
               });
+              chargeBank(value.bankAccountId, item.amount);
               setNotice(`Spesa da ${euro.format(item.amount)} registrata.`);
               return { id: item.id, status: 'saved', total: item.amount };
             },
@@ -1341,7 +1456,7 @@ export default function Home() {
       /* API sperimentale: l'interfaccia resta pienamente utilizzabile. */
     }
     return () => lifecycle.abort();
-  }, [addExpense, addWorkEntry]);
+  }, [addExpense, addWorkEntry, categories, chargeBank]);
 
   async function requestNotifications() {
     if (!('Notification' in window) || !('serviceWorker' in navigator)) {
@@ -1416,6 +1531,45 @@ export default function Home() {
     setNotice(`Conto “${account.name}” rimosso.`);
   }
 
+  function addCategory(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const name = categoryDraft.trim();
+    if (name.length < 2) {
+      setNotice('Inserisci un nome categoria valido.');
+      return;
+    }
+    if (categories.some((category) => category.toLocaleLowerCase() === name.toLocaleLowerCase())) {
+      setNotice('Questa categoria esiste già.');
+      return;
+    }
+    setCategories((current) => [...current, name]);
+    setCategoryDraft('');
+    setNotice(`Categoria “${name}” aggiunta.`);
+  }
+
+  function deleteCategory(category: string) {
+    if (CATEGORIES.includes(category)) return;
+    setCategories((current) => current.filter((item) => item !== category));
+    if (expenseDraft.category === category) {
+      setExpenseDraft((draft) => ({ ...draft, category: 'Spesa' }));
+    }
+    setNotice(`Categoria “${category}” eliminata.`);
+  }
+
+  function deleteExpense(expense: Expense) {
+    setExpenses((current) => current.filter((item) => item.id !== expense.id));
+    if (expense.bankAccountId) {
+      setBankAccounts((current) =>
+        current.map((account) =>
+          account.id === expense.bankAccountId
+            ? { ...account, balance: account.balance + expense.amount }
+            : account,
+        ),
+      );
+    }
+    setNotice(`Spesa “${expense.store}” eliminata e importo riaccreditato.`);
+  }
+
   function postponeNotifications() {
     try {
       localStorage.setItem(
@@ -1449,11 +1603,19 @@ export default function Home() {
       return;
     }
     const needsVehicle = VEHICLE_CATEGORIES.has(expenseDraft.category);
+    const selectedBank = bankAccounts.find(
+      (account) => account.id === expenseDraft.bankAccountId,
+    );
+    if (bankAccounts.length > 0 && !selectedBank) {
+      setNotice('Seleziona il conto bancario usato per questa spesa.');
+      return;
+    }
     addExpense({
       store: expenseDraft.store.trim(),
       category: expenseDraft.category,
       amount,
       date: expenseDraft.date,
+      bankAccountId: selectedBank?.id,
       vehicle: needsVehicle ? expenseDraft.vehicle : undefined,
       vehicleId: needsVehicle ? expenseDraft.vehicleId || undefined : undefined,
       vehicleNote:
@@ -1463,6 +1625,7 @@ export default function Home() {
       items: expenseDraft.items.trim() || undefined,
       receipt: expenseDraft.receipt || undefined,
     });
+    chargeBank(selectedBank?.id, amount);
     setExpenseDraft({
       store: '',
       category: 'Spesa',
@@ -1473,6 +1636,7 @@ export default function Home() {
       vehicleNote: '',
       items: '',
       receipt: '',
+      bankAccountId: bankAccounts[0]?.id ?? '',
     });
     setExpenseOpen(false);
     setNotice('Spesa registrata e grafici aggiornati.');
@@ -2362,6 +2526,62 @@ export default function Home() {
                 value={categoryData[0]?.name ?? '—'}
                 color="bg-ink"
               />
+              <Card className="rounded-[1.75rem] border-0 shadow-sm ring-1 ring-ink/7 sm:col-span-3 lg:col-span-1">
+                <CardHeader className="px-5 pt-5">
+                  <CardTitle className="font-heading text-xl font-extrabold">
+                    Categorie personalizzate
+                  </CardTitle>
+                  <p className="text-sm text-muted-foreground">
+                    Crea categorie tue e rimuovile quando non ti servono più.
+                  </p>
+                </CardHeader>
+                <CardContent className="space-y-3 px-5 pb-5">
+                  <form className="flex gap-2" onSubmit={addCategory}>
+                    <Input
+                      aria-label="Nome nuova categoria"
+                      placeholder="Es. Animali"
+                      value={categoryDraft}
+                      onChange={(event) => setCategoryDraft(event.target.value)}
+                    />
+                    <Button
+                      aria-label="Aggiungi categoria"
+                      className="shrink-0 bg-teal font-bold text-white hover:bg-teal/90"
+                      size="icon"
+                      type="submit"
+                    >
+                      <Plus />
+                    </Button>
+                  </form>
+                  <div className="flex flex-wrap gap-2">
+                    {categories.filter((category) => !CATEGORIES.includes(category)).length ? (
+                      categories
+                        .filter((category) => !CATEGORIES.includes(category))
+                        .map((category) => (
+                          <span
+                            key={category}
+                            className="inline-flex items-center gap-1 rounded-full bg-muted px-3 py-1.5 text-xs font-bold"
+                          >
+                            {category}
+                            <Button
+                              aria-label={`Elimina categoria ${category}`}
+                              className="-mr-2 size-6 text-muted-foreground hover:text-destructive"
+                              onClick={() => deleteCategory(category)}
+                              size="icon-sm"
+                              type="button"
+                              variant="ghost"
+                            >
+                              <Trash2 className="size-3.5" />
+                            </Button>
+                          </span>
+                        ))
+                    ) : (
+                      <p className="text-xs text-muted-foreground">
+                        Nessuna categoria personalizzata.
+                      </p>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
             </div>
             <Card className="rounded-[1.75rem] border-0 shadow-sm ring-1 ring-ink/7">
               <CardHeader className="border-b border-border px-5 py-5">
@@ -2382,11 +2602,7 @@ export default function Home() {
                         size="icon-sm"
                         variant="ghost"
                         className="text-muted-foreground hover:text-destructive"
-                        onClick={() =>
-                          setExpenses((all) =>
-                            all.filter((entry) => entry.id !== item.id),
-                          )
-                        }
+                        onClick={() => deleteExpense(item)}
                       >
                         <Trash2 />
                       </Button>
@@ -3203,6 +3419,7 @@ export default function Home() {
           <form className="grid gap-4 sm:grid-cols-2" onSubmit={submitExpense}>
             <Field label="Nome negozio">
               <Input
+                list="store-suggestions"
                 required
                 placeholder="Es. Supermercato"
                 value={expenseDraft.store}
@@ -3210,6 +3427,13 @@ export default function Home() {
                   setExpenseDraft({ ...expenseDraft, store: e.target.value })
                 }
               />
+              <datalist id="store-suggestions">
+                {storeSuggestions.map((store) => (
+                  <option key={store} value={store}>
+                    {store}
+                  </option>
+                ))}
+              </datalist>
             </Field>
             <Field label="Importo (€)">
               <Input
@@ -3230,7 +3454,7 @@ export default function Home() {
                   setExpenseDraft({ ...expenseDraft, category: e.target.value })
                 }
               >
-                {CATEGORIES.map((item) => (
+                {categories.map((item) => (
                   <NativeSelectOption key={item}>{item}</NativeSelectOption>
                 ))}
               </NativeSelect>
@@ -3244,6 +3468,34 @@ export default function Home() {
                   setExpenseDraft({ ...expenseDraft, date: e.target.value })
                 }
               />
+            </Field>
+            <Field label="Conto utilizzato">
+              <NativeSelect
+                className="w-full"
+                disabled={!bankAccounts.length}
+                value={expenseDraft.bankAccountId}
+                onChange={(event) =>
+                  setExpenseDraft({
+                    ...expenseDraft,
+                    bankAccountId: event.target.value,
+                  })
+                }
+              >
+                {bankAccounts.length ? (
+                  bankAccounts.map((account) => (
+                    <NativeSelectOption key={account.id} value={account.id}>
+                      {account.name} · {euro.format(account.balance)}
+                    </NativeSelectOption>
+                  ))
+                ) : (
+                  <NativeSelectOption value="">
+                    Nessun conto disponibile
+                  </NativeSelectOption>
+                )}
+              </NativeSelect>
+              <p className="text-xs text-muted-foreground">
+                L’importo verrà sottratto automaticamente dal conto scelto.
+              </p>
             </Field>
             {VEHICLE_CATEGORIES.has(expenseDraft.category) && (
               <>
@@ -3263,16 +3515,24 @@ export default function Home() {
                       });
                     }}
                   >
-                    {vehicles.map((vehicle) => (
+                    {expenseVehicles.map((vehicle) => (
                       <NativeSelectOption key={vehicle.id} value={vehicle.id}>
                         {vehicle.name}
                       </NativeSelectOption>
                     ))}
                     <NativeSelectOption value="Altro">
-                      Altro / non in elenco
+                      {expenseDraft.category === 'Gasolio' && !expenseVehicles.length
+                        ? 'Altro / nessun mezzo a gasolio'
+                        : 'Altro / non in elenco'}
                     </NativeSelectOption>
                   </NativeSelect>
                 </Field>
+                {expenseDraft.category === 'Gasolio' && !expenseVehicles.length && (
+                  <p className="text-xs text-muted-foreground sm:col-span-2">
+                    Non hai ancora un mezzo alimentato a gasolio. Puoi aggiungerlo
+                    dalla sezione Mezzi oppure usare “Altro”.
+                  </p>
+                )}
                 {expenseDraft.vehicle === 'Altro' && (
                   <Field label="Descrizione mezzo">
                     <Input
@@ -3308,11 +3568,14 @@ export default function Home() {
               <span className="flex-1">
                 {expenseDraft.receipt
                   ? 'Foto pronta per il salvataggio'
-                  : 'Aggiungi foto scontrino'}
+                  : 'Aggiungi foto o file scontrino'}
+                <span className="mt-1 block text-xs font-normal text-muted-foreground">
+                  Fotocamera, galleria o file del dispositivo
+                </span>
               </span>
               <Input
+                aria-label="Seleziona una foto o un file dello scontrino"
                 accept="image/*"
-                capture="environment"
                 className="sr-only"
                 type="file"
                 onChange={(e) => void onReceipt(e.target.files?.[0])}
