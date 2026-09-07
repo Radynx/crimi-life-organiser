@@ -1451,6 +1451,7 @@ export default function Home() {
                 !value.start ||
                 !value.end ||
                 value.breakMinutes === undefined ||
+                !Number.isFinite(value.breakMinutes) ||
                 value.breakMinutes < 0 ||
                 !isValidDateKey(value.date) ||
                 netMinutesFor(value.start, value.end, value.breakMinutes) ===
@@ -1697,6 +1698,7 @@ export default function Home() {
     );
     if (
       !isValidDateKey(workDraft.date) ||
+      !workDraft.breakMinutes.trim() ||
       !Number.isFinite(breakMinutes) ||
       breakMinutes < 0 ||
       netMinutes === null ||
