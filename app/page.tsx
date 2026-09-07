@@ -498,12 +498,31 @@ function currentMonthKey() {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 }
 
+function isValidDateKey(value: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const date = new Date(`${value}T00:00:00`);
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}
+
+function timeToMinutes(value: string) {
+  if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(value)) return null;
+  const [hours, minutes] = value.split(':').map(Number);
+  return hours * 60 + minutes;
+}
+
+function netMinutesFor(startValue: string, endValue: string, breakMinutes: number) {
+  const start = timeToMinutes(startValue);
+  const end = timeToMinutes(endValue);
+  if (start === null || end === null) return null;
+  let duration = end - start;
+  if (duration < 0) duration += 24 * 60;
+  return duration - breakMinutes;
+}
+
 function hoursFor(entry: WorkEntry) {
-  const [sh, sm] = entry.start.split(':').map(Number);
-  const [eh, em] = entry.end.split(':').map(Number);
-  let minutes = eh * 60 + em - (sh * 60 + sm);
-  if (minutes < 0) minutes += 24 * 60;
-  return Math.max(0, (minutes - entry.breakMinutes) / 60);
+  const minutes = netMinutesFor(entry.start, entry.end, entry.breakMinutes);
+  if (minutes === null) return 0;
+  return Math.max(0, minutes / 60);
 }
 
 function isDieselFuel(fuel: string) {
@@ -1060,6 +1079,9 @@ export default function Home() {
 
   useEffect(() => {
     if (!('serviceWorker' in navigator)) return;
+    const notificationsSupported =
+      'Notification' in window &&
+      typeof Notification.requestPermission === 'function';
     const serviceWorkerUrl = new URL(
       './service-worker.js',
       window.location.href,
@@ -1067,7 +1089,12 @@ export default function Home() {
     void navigator.serviceWorker
       .register(serviceWorkerUrl)
       .then(async (registration) => {
-        if (Notification.permission !== 'granted') return;
+        if (
+          !notificationsSupported ||
+          Notification.permission !== 'granted' ||
+          typeof registration.showNotification !== 'function'
+        )
+          return;
         const urgent = deadlines.filter(
           (item) => daysUntil(item.date) >= 0 && daysUntil(item.date) <= 30,
         );
@@ -1083,9 +1110,7 @@ export default function Home() {
           localStorage.setItem('crimi-notification-check', today);
         }
       })
-      .catch(() =>
-        setNotice('Modalità offline non disponibile in questo browser.'),
-      );
+      .catch(() => setNotice('Non è stato possibile preparare le notifiche.'));
   }, [deadlines]);
 
   useEffect(() => {
@@ -1103,17 +1128,6 @@ export default function Home() {
       setNotificationHelpOpen(true);
     }
   }, [authUser]);
-
-  useEffect(() => {
-    if (!firebaseAuth) return undefined;
-    return onAuthStateChanged(firebaseAuth, (user) => {
-      setAuthUser(user);
-      if (user) {
-        setAuthOpen(false);
-        setAuthPassword('');
-      }
-    });
-  }, []);
 
   useEffect(() => {
     if (settings.enabledSections[section]) return;
@@ -1385,7 +1399,7 @@ export default function Home() {
                 !categories.includes(value.category) ||
                 !value.amount ||
                 value.amount <= 0 ||
-                !/^\d{4}-\d{2}-\d{2}$/.test(value.date ?? '')
+                !isValidDateKey(value.date ?? '')
               )
                 throw new Error('Dati della spesa non validi.');
               if (VEHICLE_CATEGORIES.has(value.category) && !value.vehicle)
@@ -1437,7 +1451,11 @@ export default function Home() {
                 !value.start ||
                 !value.end ||
                 value.breakMinutes === undefined ||
-                value.breakMinutes < 0
+                value.breakMinutes < 0 ||
+                !isValidDateKey(value.date) ||
+                netMinutesFor(value.start, value.end, value.breakMinutes) ===
+                  null ||
+                netMinutesFor(value.start, value.end, value.breakMinutes)! <= 0
               )
                 throw new Error('Dati delle ore non validi.');
               const item = addWorkEntry({
@@ -1467,16 +1485,26 @@ export default function Home() {
       setNotificationHelpOpen(true);
       return;
     }
-    const permission = await Notification.requestPermission();
-    if (permission === 'granted') {
+    try {
+      const permission = await Notification.requestPermission();
+      if (permission !== 'granted') {
+        setNotificationHelpOpen(true);
+        return;
+      }
       const registration = await navigator.serviceWorker.ready;
+      if (typeof registration.showNotification !== 'function') {
+        setNotice('Le notifiche non sono disponibili in questo browser.');
+        return;
+      }
       await registration.showNotification('Crimi è pronto', {
         body: 'Riceverai un avviso quando una scadenza si avvicina.',
         icon: './icon-192.png',
         tag: 'crimi-welcome',
       });
       setNotice('Notifiche attivate.');
-    } else setNotificationHelpOpen(true);
+    } catch {
+      setNotice('Non è stato possibile attivare le notifiche.');
+    }
   }
 
   function openNewBank() {
@@ -1500,7 +1528,7 @@ export default function Home() {
     event.preventDefault();
     const name = bankDraft.name.trim();
     const balance = Number(bankDraft.balance.replace(',', '.'));
-    if (!name || !Number.isFinite(balance)) {
+    if (!name || !bankDraft.balance.trim() || !Number.isFinite(balance)) {
       setNotice('Inserisci nome banca e saldo validi.');
       return;
     }
@@ -1598,11 +1626,28 @@ export default function Home() {
   function submitExpense(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const amount = Number(expenseDraft.amount.replace(',', '.'));
-    if (!expenseDraft.store.trim() || !amount || amount <= 0) {
-      setNotice('Inserisci negozio e importo valido.');
+    if (
+      !expenseDraft.store.trim() ||
+      !Number.isFinite(amount) ||
+      amount <= 0 ||
+      !isValidDateKey(expenseDraft.date)
+    ) {
+      setNotice('Inserisci negozio, data e importo validi.');
+      return;
+    }
+    if (!categories.includes(expenseDraft.category)) {
+      setNotice('Seleziona una categoria valida.');
       return;
     }
     const needsVehicle = VEHICLE_CATEGORIES.has(expenseDraft.category);
+    if (
+      needsVehicle &&
+      expenseDraft.vehicle === 'Altro' &&
+      !expenseDraft.vehicleNote.trim()
+    ) {
+      setNotice('Descrivi il mezzo selezionato.');
+      return;
+    }
     const selectedBank = bankAccounts.find(
       (account) => account.id === expenseDraft.bankAccountId,
     );
@@ -1644,11 +1689,27 @@ export default function Home() {
 
   function submitWork(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const breakMinutes = Number(workDraft.breakMinutes);
+    const netMinutes = netMinutesFor(
+      workDraft.start,
+      workDraft.end,
+      breakMinutes,
+    );
+    if (
+      !isValidDateKey(workDraft.date) ||
+      !Number.isFinite(breakMinutes) ||
+      breakMinutes < 0 ||
+      netMinutes === null ||
+      netMinutes <= 0
+    ) {
+      setNotice('Controlla data, orari e durata della pausa.');
+      return;
+    }
     const entry = addWorkEntry({
       date: workDraft.date,
       start: workDraft.start,
       end: workDraft.end,
-      breakMinutes: Number(workDraft.breakMinutes) || 0,
+      breakMinutes,
     });
     setNotice(
       `${hoursFor(entry).toLocaleString('it-IT', { maximumFractionDigits: 2 })} ore aggiunte al mese.`,
